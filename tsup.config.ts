@@ -10,7 +10,8 @@ export default defineConfig([
     sourcemap: false,
     clean: true,
     splitting: false,
-    shims: true
+    shims: true,
+    external: ['sqlite3', 'better-sqlite3']
   },
   {
     entry: {
@@ -21,6 +22,7 @@ export default defineConfig([
     dts: false,
     sourcemap: true,
     splitting: false,
-    shims: true
+    shims: true,
+    external: ['sqlite3', 'better-sqlite3']
   }
 ]);

@@ -1,8 +1,8 @@
-import Database from 'better-sqlite3';
-import { readFileSync } from 'fs';
+import { Low } from 'lowdb';
+import { JSONFile } from 'lowdb/node';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { mkdirSync } from 'fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -54,136 +54,202 @@ export interface KanbanTicket {
   updated_at: string;
 }
 
+interface DatabaseSchema {
+  config: Record<string, string>;
+  test_sessions: TestSession[];
+  actions: Action[];
+  bugs: Bug[];
+  kanban_tickets: KanbanTicket[];
+}
+
 export class OpenQADatabase {
-  private db: Database.Database;
+  private db: Low<DatabaseSchema> | null = null;
 
-  constructor(dbPath: string = './data/openqa.db') {
-    const dir = dirname(dbPath);
-    mkdirSync(dir, { recursive: true });
-
-    this.db = new Database(dbPath);
+  constructor(private dbPath: string = './data/openqa.json') {
     this.initialize();
   }
 
   private initialize() {
-    const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8');
-    this.db.exec(schema);
+    const dir = dirname(this.dbPath);
+    mkdirSync(dir, { recursive: true });
+
+    const adapter = new JSONFile<DatabaseSchema>(this.dbPath);
+    this.db = new Low<DatabaseSchema>(adapter, {
+      config: {},
+      test_sessions: [],
+      actions: [],
+      bugs: [],
+      kanban_tickets: []
+    });
+
+    this.db.read();
+    if (!this.db.data) {
+      this.db.data = {
+        config: {},
+        test_sessions: [],
+        actions: [],
+        bugs: [],
+        kanban_tickets: []
+      };
+      this.db.write();
+    }
   }
 
-  getConfig(key: string): string | null {
-    const row = this.db.prepare('SELECT value FROM config WHERE key = ?').get(key) as { value: string } | undefined;
-    return row?.value || null;
+  private async ensureInitialized() {
+    if (!this.db) {
+      this.initialize();
+    }
+    await this.db!.read();
   }
 
-  setConfig(key: string, value: string) {
-    this.db.prepare('INSERT OR REPLACE INTO config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(key, value);
+  async getConfig(key: string): Promise<string | null> {
+    await this.ensureInitialized();
+    return this.db!.data.config[key] || null;
   }
 
-  getAllConfig(): Record<string, string> {
-    const rows = this.db.prepare('SELECT key, value FROM config').all() as { key: string; value: string }[];
-    return Object.fromEntries(rows.map(r => [r.key, r.value]));
+  async setConfig(key: string, value: string) {
+    await this.ensureInitialized();
+    this.db!.data.config[key] = value;
+    await this.db!.write();
   }
 
-  createSession(id: string, metadata?: any): TestSession {
-    this.db.prepare('INSERT INTO test_sessions (id, status, metadata) VALUES (?, ?, ?)').run(
+  async getAllConfig(): Promise<Record<string, string>> {
+    await this.ensureInitialized();
+    return this.db!.data.config;
+  }
+
+  async createSession(id: string, metadata?: any): Promise<TestSession> {
+    await this.ensureInitialized();
+    const session: TestSession = {
       id,
-      'running',
-      metadata ? JSON.stringify(metadata) : null
-    );
-    return this.getSession(id)!;
+      started_at: new Date().toISOString(),
+      status: 'running',
+      total_actions: 0,
+      bugs_found: 0,
+      metadata: metadata ? JSON.stringify(metadata) : undefined
+    };
+    this.db!.data.test_sessions.push(session);
+    await this.db!.write();
+    return session;
   }
 
-  getSession(id: string): TestSession | null {
-    return this.db.prepare('SELECT * FROM test_sessions WHERE id = ?').get(id) as TestSession | null;
+  async getSession(id: string): Promise<TestSession | null> {
+    await this.ensureInitialized();
+    return this.db!.data.test_sessions.find(s => s.id === id) || null;
   }
 
-  updateSession(id: string, updates: Partial<TestSession>) {
-    const fields = Object.keys(updates).map(k => `${k} = ?`).join(', ');
-    const values = [...Object.values(updates), id];
-    this.db.prepare(`UPDATE test_sessions SET ${fields} WHERE id = ?`).run(...values);
+  async updateSession(id: string, updates: Partial<TestSession>) {
+    await this.ensureInitialized();
+    const index = this.db!.data.test_sessions.findIndex(s => s.id === id);
+    if (index !== -1) {
+      this.db!.data.test_sessions[index] = { ...this.db!.data.test_sessions[index], ...updates };
+      await this.db!.write();
+    }
   }
 
-  getRecentSessions(limit: number = 10): TestSession[] {
-    return this.db.prepare('SELECT * FROM test_sessions ORDER BY started_at DESC LIMIT ?').all(limit) as TestSession[];
+  async getRecentSessions(limit: number = 10): Promise<TestSession[]> {
+    await this.ensureInitialized();
+    return this.db!.data.test_sessions
+      .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())
+      .slice(0, limit);
   }
 
-  createAction(action: Omit<Action, 'id' | 'timestamp'>): Action {
-    const id = `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    this.db.prepare('INSERT INTO actions (id, session_id, type, description, input, output, screenshot_path) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-      id,
-      action.session_id,
-      action.type,
-      action.description,
-      action.input || null,
-      action.output || null,
-      action.screenshot_path || null
-    );
-    return this.db.prepare('SELECT * FROM actions WHERE id = ?').get(id) as Action;
+  async createAction(action: Omit<Action, 'id' | 'timestamp'>): Promise<Action> {
+    await this.ensureInitialized();
+    const newAction: Action = {
+      id: `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date().toISOString(),
+      ...action
+    };
+    this.db!.data.actions.push(newAction);
+    await this.db!.write();
+    return newAction;
   }
 
-  getSessionActions(sessionId: string): Action[] {
-    return this.db.prepare('SELECT * FROM actions WHERE session_id = ? ORDER BY timestamp DESC').all(sessionId) as Action[];
+  async getSessionActions(sessionId: string): Promise<Action[]> {
+    await this.ensureInitialized();
+    return this.db!.data.actions
+      .filter(a => a.session_id === sessionId)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }
 
-  createBug(bug: Omit<Bug, 'id' | 'created_at' | 'updated_at'>): Bug {
-    const id = `bug_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    this.db.prepare('INSERT INTO bugs (id, session_id, title, description, severity, status, github_issue_url, screenshot_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-      id,
-      bug.session_id,
-      bug.title,
-      bug.description,
-      bug.severity,
-      bug.status,
-      bug.github_issue_url || null,
-      bug.screenshot_path || null
-    );
-    return this.db.prepare('SELECT * FROM bugs WHERE id = ?').get(id) as Bug;
+  async createBug(bug: Omit<Bug, 'id' | 'created_at' | 'updated_at'>): Promise<Bug> {
+    await this.ensureInitialized();
+    const newBug: Bug = {
+      id: `bug_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ...bug
+    };
+    this.db!.data.bugs.push(newBug);
+    await this.db!.write();
+    return newBug;
   }
 
-  updateBug(id: string, updates: Partial<Bug>) {
-    const fields = Object.keys(updates).map(k => `${k} = ?`).join(', ');
-    const values = [...Object.values(updates), id];
-    this.db.prepare(`UPDATE bugs SET ${fields}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(...values);
+  async updateBug(id: string, updates: Partial<Bug>) {
+    await this.ensureInitialized();
+    const index = this.db!.data.bugs.findIndex(b => b.id === id);
+    if (index !== -1) {
+      this.db!.data.bugs[index] = { 
+        ...this.db!.data.bugs[index], 
+        ...updates, 
+        updated_at: new Date().toISOString() 
+      };
+      await this.db!.write();
+    }
   }
 
-  getAllBugs(): Bug[] {
-    return this.db.prepare('SELECT * FROM bugs ORDER BY created_at DESC').all() as Bug[];
+  async getAllBugs(): Promise<Bug[]> {
+    await this.ensureInitialized();
+    return this.db!.data.bugs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }
 
-  getBugsByStatus(status: Bug['status']): Bug[] {
-    return this.db.prepare('SELECT * FROM bugs WHERE status = ? ORDER BY created_at DESC').all(status) as Bug[];
+  async getBugsByStatus(status: Bug['status']): Promise<Bug[]> {
+    await this.ensureInitialized();
+    return this.db!.data.bugs
+      .filter(b => b.status === status)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }
 
-  createKanbanTicket(ticket: Omit<KanbanTicket, 'id' | 'created_at' | 'updated_at'>): KanbanTicket {
-    const id = `ticket_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    this.db.prepare('INSERT INTO kanban_tickets (id, bug_id, title, description, priority, column, tags, screenshot_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-      id,
-      ticket.bug_id || null,
-      ticket.title,
-      ticket.description,
-      ticket.priority,
-      ticket.column,
-      ticket.tags || null,
-      ticket.screenshot_url || null
-    );
-    return this.db.prepare('SELECT * FROM kanban_tickets WHERE id = ?').get(id) as KanbanTicket;
+  async createKanbanTicket(ticket: Omit<KanbanTicket, 'id' | 'created_at' | 'updated_at'>): Promise<KanbanTicket> {
+    await this.ensureInitialized();
+    const newTicket: KanbanTicket = {
+      id: `ticket_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ...ticket
+    };
+    this.db!.data.kanban_tickets.push(newTicket);
+    await this.db!.write();
+    return newTicket;
   }
 
-  updateKanbanTicket(id: string, updates: Partial<KanbanTicket>) {
-    const fields = Object.keys(updates).map(k => `${k} = ?`).join(', ');
-    const values = [...Object.values(updates), id];
-    this.db.prepare(`UPDATE kanban_tickets SET ${fields}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(...values);
+  async updateKanbanTicket(id: string, updates: Partial<KanbanTicket>) {
+    await this.ensureInitialized();
+    const index = this.db!.data.kanban_tickets.findIndex(t => t.id === id);
+    if (index !== -1) {
+      this.db!.data.kanban_tickets[index] = { 
+        ...this.db!.data.kanban_tickets[index], 
+        ...updates, 
+        updated_at: new Date().toISOString() 
+      };
+      await this.db!.write();
+    }
   }
 
-  getKanbanTickets(): KanbanTicket[] {
-    return this.db.prepare('SELECT * FROM kanban_tickets ORDER BY created_at DESC').all() as KanbanTicket[];
+  async getKanbanTickets(): Promise<KanbanTicket[]> {
+    await this.ensureInitialized();
+    return this.db!.data.kanban_tickets.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }
 
-  getKanbanTicketsByColumn(column: KanbanTicket['column']): KanbanTicket[] {
-    return this.db.prepare('SELECT * FROM kanban_tickets WHERE column = ? ORDER BY created_at DESC').all(column) as KanbanTicket[];
+  async getKanbanTicketsByColumn(column: KanbanTicket['column']): Promise<KanbanTicket[]> {
+    await this.ensureInitialized();
+    return this.db!.data.kanban_tickets
+      .filter(t => t.column === column)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }
 
-  close() {
-    this.db.close();
+  async close() {
+    // LowDB doesn't need explicit closing
   }
 }
