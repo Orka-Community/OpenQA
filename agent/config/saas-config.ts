@@ -13,16 +13,13 @@ export class SaaSConfigManager {
   }
 
   private loadConfig() {
-    const saved = this.db.getConfig('saas_config');
-    if (saved) {
-      this.config = JSON.parse(saved);
-    }
+    // For now, use environment variables only
+    // TODO: Implement async config loading when needed
   }
 
   private saveConfig() {
-    if (this.config) {
-      this.db.setConfig('saas_config', JSON.stringify(this.config));
-    }
+    // For now, use environment variables only
+    // TODO: Implement async config saving when needed
   }
 
   configure(config: SaaSConfig): SaaSConfig {
