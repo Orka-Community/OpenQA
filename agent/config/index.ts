@@ -12,7 +12,7 @@ export interface OpenQAConfig {
   };
   saas: {
     url: string;
-    authType: 'none' | 'basic' | 'session';
+    authType: 'none' | 'basic' | 'bearer' | 'session';
     username?: string;
     password?: string;
   };

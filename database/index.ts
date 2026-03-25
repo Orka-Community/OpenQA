@@ -249,6 +249,12 @@ export class OpenQADatabase {
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }
 
+  async clearAllConfig() {
+    await this.ensureInitialized();
+    this.db!.data.config = {};
+    await this.db!.write();
+  }
+
   async close() {
     // LowDB doesn't need explicit closing
   }

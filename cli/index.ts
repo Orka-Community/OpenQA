@@ -72,7 +72,9 @@ program
 
     try {
       if (!existsSync(PID_FILE)) {
-        spinner.fail(chalk.red('OpenQA is not running'));
+        spinner.fail(chalk.red('No OpenQA daemon process found'));
+        console.log(chalk.yellow('Note: OpenQA might be running in foreground mode'));
+        console.log(chalk.cyan('Use Ctrl+C to stop foreground processes'));
         process.exit(1);
       }
 
@@ -81,11 +83,12 @@ program
       try {
         process.kill(parseInt(pid), 'SIGTERM');
         unlinkSync(PID_FILE);
-        spinner.succeed(chalk.green('OpenQA stopped'));
+        spinner.succeed(chalk.green('OpenQA daemon stopped'));
       } catch (error) {
         spinner.fail(chalk.red('Failed to stop OpenQA'));
-        console.error(chalk.red('Process not found. Cleaning up PID file...'));
+        console.error(chalk.red('Process not found. Cleaning up stale PID file...'));
         unlinkSync(PID_FILE);
+        console.log(chalk.yellow('The daemon process was already stopped'));
       }
     } catch (error: any) {
       spinner.fail(chalk.red('Failed to stop OpenQA'));

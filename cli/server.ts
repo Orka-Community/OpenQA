@@ -57,9 +57,28 @@ export async function startWebServer() {
   });
 
   app.post('/api/config', async (req, res) => {
-    const { key, value } = req.body;
-    await config.set(key, value);
-    res.json({ success: true });
+    try {
+      const configData = req.body;
+      
+      // Update each configuration key
+      for (const [key, value] of Object.entries(configData)) {
+        await config.set(key, String(value));
+      }
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post('/api/config/reset', async (req, res) => {
+    try {
+      // Reset configuration by clearing all keys
+      await db.clearAllConfig();
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
   });
 
   // Simple HTML pages for Web UI, Kanban, and Config
@@ -183,8 +202,39 @@ export async function startWebServer() {
             .section h2 { margin-top: 0; color: #38bdf8; font-size: 18px; }
             .config-item { margin: 15px 0; }
             .config-item label { display: block; margin-bottom: 5px; color: #94a3b8; font-size: 14px; }
-            .config-item .value { background: #334155; padding: 8px 12px; border-radius: 4px; font-family: monospace; font-size: 14px; }
+            .config-item input, .config-item select { 
+              background: #334155; 
+              border: 1px solid #475569; 
+              color: #e2e8f0; 
+              padding: 8px 12px; 
+              border-radius: 4px; 
+              font-family: monospace; 
+              font-size: 14px; 
+              width: 100%;
+              max-width: 400px;
+            }
+            .config-item input:focus, .config-item select:focus { 
+              outline: none; 
+              border-color: #38bdf8; 
+              box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.1); 
+            }
+            .btn { 
+              background: #38bdf8; 
+              color: white; 
+              border: none; 
+              padding: 10px 20px; 
+              border-radius: 6px; 
+              cursor: pointer; 
+              font-size: 14px; 
+              margin-right: 10px;
+            }
+            .btn:hover { background: #0ea5e9; }
+            .btn-secondary { background: #64748b; }
+            .btn-secondary:hover { background: #475569; }
+            .success { color: #10b981; margin-left: 10px; }
+            .error { color: #ef4444; margin-left: 10px; }
             code { background: #334155; padding: 2px 6px; border-radius: 3px; font-size: 13px; }
+            .checkbox { margin-right: 8px; }
           </style>
         </head>
         <body>
@@ -197,47 +247,87 @@ export async function startWebServer() {
           
           <div class="section">
             <h2>SaaS Target</h2>
-            <div class="config-item">
-              <label>URL</label>
-              <div class="value">${cfg.saas.url || 'Not configured'}</div>
-            </div>
-            <div class="config-item">
-              <label>Auth Type</label>
-              <div class="value">${cfg.saas.authType}</div>
-            </div>
+            <form id="configForm">
+              <div class="config-item">
+                <label>URL</label>
+                <input type="url" id="saas_url" name="saas.url" value="${cfg.saas.url || ''}" placeholder="https://your-app.com">
+              </div>
+              <div class="config-item">
+                <label>Auth Type</label>
+                <select id="saas_authType" name="saas.authType">
+                  <option value="none" ${cfg.saas.authType === 'none' ? 'selected' : ''}>None</option>
+                  <option value="basic" ${cfg.saas.authType === 'basic' ? 'selected' : ''}>Basic Auth</option>
+                  <option value="bearer" ${cfg.saas.authType === 'bearer' ? 'selected' : ''}>Bearer Token</option>
+                  <option value="session" ${cfg.saas.authType === 'session' ? 'selected' : ''}>Session</option>
+                </select>
+              </div>
+              <div class="config-item">
+                <label>Username (for Basic Auth)</label>
+                <input type="text" id="saas_username" name="saas.username" value="${cfg.saas.username || ''}" placeholder="username">
+              </div>
+              <div class="config-item">
+                <label>Password (for Basic Auth)</label>
+                <input type="password" id="saas_password" name="saas.password" value="${cfg.saas.password || ''}" placeholder="password">
+              </div>
+            </form>
           </div>
 
           <div class="section">
             <h2>LLM Configuration</h2>
-            <div class="config-item">
-              <label>Provider</label>
-              <div class="value">${cfg.llm.provider}</div>
-            </div>
-            <div class="config-item">
-              <label>Model</label>
-              <div class="value">${cfg.llm.model || 'default'}</div>
-            </div>
+            <form id="configForm">
+              <div class="config-item">
+                <label>Provider</label>
+                <select id="llm_provider" name="llm.provider">
+                  <option value="openai" ${cfg.llm.provider === 'openai' ? 'selected' : ''}>OpenAI</option>
+                  <option value="anthropic" ${cfg.llm.provider === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+                  <option value="ollama" ${cfg.llm.provider === 'ollama' ? 'selected' : ''}>Ollama</option>
+                </select>
+              </div>
+              <div class="config-item">
+                <label>Model</label>
+                <input type="text" id="llm_model" name="llm.model" value="${cfg.llm.model || ''}" placeholder="gpt-4, claude-3-sonnet, etc.">
+              </div>
+              <div class="config-item">
+                <label>API Key</label>
+                <input type="password" id="llm_apiKey" name="llm.apiKey" value="${cfg.llm.apiKey || ''}" placeholder="Your API key">
+              </div>
+              <div class="config-item">
+                <label>Base URL (for Ollama)</label>
+                <input type="url" id="llm_baseUrl" name="llm.baseUrl" value="${cfg.llm.baseUrl || ''}" placeholder="http://localhost:11434">
+              </div>
+            </form>
           </div>
 
           <div class="section">
             <h2>Agent Settings</h2>
-            <div class="config-item">
-              <label>Auto-start</label>
-              <div class="value">${cfg.agent.autoStart ? 'Enabled' : 'Disabled'}</div>
-            </div>
-            <div class="config-item">
-              <label>Interval</label>
-              <div class="value">${cfg.agent.intervalMs}ms</div>
-            </div>
-            <div class="config-item">
-              <label>Max Iterations</label>
-              <div class="value">${cfg.agent.maxIterations}</div>
-            </div>
+            <form id="configForm">
+              <div class="config-item">
+                <label>
+                  <input type="checkbox" id="agent_autoStart" name="agent.autoStart" class="checkbox" ${cfg.agent.autoStart ? 'checked' : ''}>
+                  Auto-start
+                </label>
+              </div>
+              <div class="config-item">
+                <label>Interval (ms)</label>
+                <input type="number" id="agent_intervalMs" name="agent.intervalMs" value="${cfg.agent.intervalMs}" min="60000">
+              </div>
+              <div class="config-item">
+                <label>Max Iterations</label>
+                <input type="number" id="agent_maxIterations" name="agent.maxIterations" value="${cfg.agent.maxIterations}" min="1" max="100">
+              </div>
+            </form>
           </div>
 
           <div class="section">
-            <h2>How to Configure</h2>
-            <p>Set environment variables before starting OpenQA:</p>
+            <h2>Actions</h2>
+            <button type="button" class="btn" onclick="saveConfig()">Save Configuration</button>
+            <button type="button" class="btn btn-secondary" onclick="resetConfig()">Reset to Defaults</button>
+            <span id="message"></span>
+          </div>
+
+          <div class="section">
+            <h2>Environment Variables</h2>
+            <p>You can also set these environment variables before starting OpenQA:</p>
             <pre style="background: #334155; padding: 15px; border-radius: 6px; overflow-x: auto;"><code>export SAAS_URL="https://your-app.com"
 export AGENT_AUTO_START=true
 export LLM_PROVIDER=openai
@@ -245,6 +335,78 @@ export OPENAI_API_KEY="your-key"
 
 openqa start</code></pre>
           </div>
+
+          <script>
+            async function saveConfig() {
+              const form = document.getElementById('configForm');
+              const formData = new FormData(form);
+              const config = {};
+              
+              for (let [key, value] of formData.entries()) {
+                if (value === '') continue;
+                
+                // Handle nested keys like "saas.url"
+                const keys = key.split('.');
+                let obj = config;
+                for (let i = 0; i < keys.length - 1; i++) {
+                  if (!obj[keys[i]]) obj[keys[i]] = {};
+                  obj = obj[keys[i]];
+                }
+                
+                // Convert checkbox values to boolean
+                if (key.includes('autoStart')) {
+                  obj[keys[keys.length - 1]] = value === 'on';
+                } else if (key.includes('intervalMs') || key.includes('maxIterations')) {
+                  obj[keys[keys.length - 1]] = parseInt(value);
+                } else {
+                  obj[keys[keys.length - 1]] = value;
+                }
+              }
+              
+              try {
+                const response = await fetch('/api/config', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(config)
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                  showMessage('Configuration saved successfully!', 'success');
+                  setTimeout(() => location.reload(), 1500);
+                } else {
+                  showMessage('Failed to save configuration', 'error');
+                }
+              } catch (error) {
+                showMessage('Error: ' + error.message, 'error');
+              }
+            }
+            
+            async function resetConfig() {
+              if (confirm('Are you sure you want to reset all configuration to defaults?')) {
+                try {
+                  const response = await fetch('/api/config/reset', { method: 'POST' });
+                  const result = await response.json();
+                  if (result.success) {
+                    showMessage('Configuration reset to defaults', 'success');
+                    setTimeout(() => location.reload(), 1500);
+                  }
+                } catch (error) {
+                  showMessage('Error: ' + error.message, 'error');
+                }
+              }
+            }
+            
+            function showMessage(text, type) {
+              const messageEl = document.getElementById('message');
+              messageEl.textContent = text;
+              messageEl.className = type;
+              setTimeout(() => {
+                messageEl.textContent = '';
+                messageEl.className = '';
+              }, 3000);
+            }
+          </script>
         </body>
       </html>
     `);
