@@ -142,61 +142,22 @@ export async function startWebServer() {
 
   // Current tasks
   app.get('/api/tasks', async (req, res) => {
-    // Mock tasks for now
-    const tasks = [
-      {
-        id: 'task_1',
-        name: 'Scan Application',
-        status: 'completed',
-        agent: 'Main Agent',
-        started_at: new Date(Date.now() - 300000).toISOString(),
-        completed_at: new Date(Date.now() - 240000).toISOString(),
-        result: 'Found 5 testable components'
-      },
-      {
-        id: 'task_2',
-        name: 'Generate Tests',
-        status: 'in-progress',
-        agent: 'Main Agent',
-        started_at: new Date(Date.now() - 180000).toISOString(),
-        progress: '60%'
-      },
-      {
-        id: 'task_3',
-        name: 'Authentication Test',
-        status: 'pending',
-        agent: 'Auth Specialist',
-        dependencies: ['task_2']
-      }
-    ];
-    
-    res.json(tasks);
+    try {
+      const tasks = await db.getCurrentTasks();
+      res.json(tasks);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // Issues encountered
   app.get('/api/issues', async (req, res) => {
-    const issues = [
-      {
-        id: 'issue_1',
-        type: 'authentication',
-        severity: 'warning',
-        message: 'Admin area requires authentication',
-        agent: 'Main Agent',
-        timestamp: new Date(Date.now() - 120000).toISOString(),
-        status: 'pending'
-      },
-      {
-        id: 'issue_2',
-        type: 'network',
-        severity: 'error',
-        message: 'Failed to connect to external API',
-        agent: 'API Tester',
-        timestamp: new Date(Date.now() - 60000).toISOString(),
-        status: 'resolved'
-      }
-    ];
-    
-    res.json(issues);
+    try {
+      const issues = await db.getCurrentIssues();
+      res.json(issues);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // Professional Dashboard with Charts and Agent Hierarchy
@@ -2150,48 +2111,107 @@ openqa start</pre>
   });
 }
 
-wss.on('connection', (ws) => {
+wss.on('connection', async (ws) => {
     console.log('WebSocket client connected');
     
-    // Send initial status
-    ws.send(JSON.stringify({ 
-      type: 'status', 
-      data: { isRunning: false, target: cfg.saas.url || 'Not configured' }
-    }));
-    
-    // Send mock agent data for now
-    ws.send(JSON.stringify({ 
-      type: 'agents', 
-      data: [
-        { name: 'Main Agent', status: 'idle', purpose: 'Autonomous testing' }
-      ]
-    }));
-    
-    // Simulate some activity for demo
-    let activityCount = 0;
-    const activityInterval = setInterval(() => {
-      if (ws.readyState === ws.OPEN) {
-        const activities = [
-          { type: 'info', message: '🔍 Scanning application for test targets', timestamp: new Date().toISOString() },
-          { type: 'success', message: '✅ Found 5 testable components', timestamp: new Date().toISOString() },
-          { type: 'warning', message: '⚠️ Authentication required for admin area', timestamp: new Date().toISOString() },
-          { type: 'info', message: '🧪 Generating test scenarios', timestamp: new Date().toISOString() },
-          { type: 'success', message: '✅ Created 3 test cases', timestamp: new Date().toISOString() }
-        ];
-        
+    try {
+      // Get real data from database
+      const sessions = await db.getRecentSessions(1);
+      const currentSession = sessions[0];
+      const agents = await db.getActiveAgents();
+      const tasks = await db.getCurrentTasks();
+      const issues = await db.getCurrentIssues();
+      
+      // Send initial status with real data
+      ws.send(JSON.stringify({ 
+        type: 'status', 
+        data: { 
+          isRunning: currentSession?.status === 'running' || false, 
+          target: cfg.saas.url || 'Not configured',
+          sessionId: currentSession?.id || null
+        }
+      }));
+      
+      // Send real agent data
+      ws.send(JSON.stringify({ 
+        type: 'agents', 
+        data: agents
+      }));
+      
+      // Send real session data if exists
+      if (currentSession) {
         ws.send(JSON.stringify({ 
-          type: 'activity', 
-          data: activities[activityCount % activities.length]
+          type: 'session', 
+          data: {
+            active_agents: agents.length,
+            total_actions: currentSession.total_actions || 0,
+            bugs_found: currentSession.bugs_found || 0,
+            success_rate: currentSession.total_actions > 0 ? 
+              Math.round(((currentSession.total_actions - (currentSession.bugs_found || 0)) / currentSession.total_actions) * 100) : 0,
+            timestamp: new Date().toISOString(),
+            agents: agents,
+            tasks: tasks,
+            issues: issues
+          }
         }));
-        
-        activityCount++;
       }
-    }, 5000);
-    
-    ws.on('close', () => {
-      console.log('WebSocket client disconnected');
-      clearInterval(activityInterval);
-    });
+      
+      // Send real tasks
+      ws.send(JSON.stringify({ 
+        type: 'tasks', 
+        data: tasks
+      }));
+      
+      // Send real issues
+      ws.send(JSON.stringify({ 
+        type: 'issues', 
+        data: issues
+      }));
+      
+      // Generate realistic activities based on current session
+      let activityCount = 0;
+      const activityInterval = setInterval(async () => {
+        if (ws.readyState === ws.OPEN) {
+          // Get fresh data
+          const freshSessions = await db.getRecentSessions(1);
+          const freshSession = freshSessions[0];
+          
+          if (freshSession) {
+            const activities = [
+              { type: 'info', message: `🔍 Session ${freshSession.id} - Analyzing application`, timestamp: new Date().toISOString() },
+              { type: 'success', message: `✅ Completed ${freshSession.total_actions || 0} test actions`, timestamp: new Date().toISOString() },
+              { type: 'warning', message: `⚠️ Found ${freshSession.bugs_found || 0} issues to review`, timestamp: new Date().toISOString() },
+              { type: 'info', message: `🧪 Success rate: ${freshSession.total_actions > 0 ? Math.round(((freshSession.total_actions - (freshSession.bugs_found || 0)) / freshSession.total_actions) * 100) : 0}%`, timestamp: new Date().toISOString() },
+              { type: 'success', message: `✅ ${agents.filter(a => a.status === 'running').length} agents active`, timestamp: new Date().toISOString() }
+            ];
+            
+            ws.send(JSON.stringify({ 
+              type: 'activity', 
+              data: activities[activityCount % activities.length]
+            }));
+          } else {
+            ws.send(JSON.stringify({ 
+              type: 'activity', 
+              data: { type: 'info', message: '🔄 Waiting for session to start...', timestamp: new Date().toISOString() }
+            }));
+          }
+          
+          activityCount++;
+        }
+      }, 8000); // Update every 8 seconds with real data
+      
+      ws.on('close', () => {
+        console.log('WebSocket client disconnected');
+        clearInterval(activityInterval);
+      });
+      
+    } catch (error) {
+      console.error('Error setting up WebSocket:', error);
+      ws.send(JSON.stringify({ 
+        type: 'error', 
+        data: { message: 'Failed to load initial data' }
+      }));
+    }
   });
 
   // Graceful shutdown
