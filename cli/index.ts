@@ -51,27 +51,11 @@ program
         spinner.succeed(chalk.green('OpenQA started in daemon mode'));
         console.log(chalk.cyan(`PID: ${child.pid}`));
       } else {
-        spinner.succeed(chalk.green('OpenQA started'));
+        // Start web server in foreground mode
+        const { startWebServer } = await import('../cli/server.js');
+        await startWebServer();
         
-        const agent = new OpenQAAgent();
-        const config = new ConfigManager();
-        const cfg = config.getConfigSync();
-
-        console.log(chalk.cyan('\n📊 OpenQA Status:'));
-        console.log(chalk.white(`  Agent: Running`));
-        console.log(chalk.white(`  Target: ${cfg.saas.url || 'Not configured'}`));
-        console.log(chalk.white(`  Web UI: http://localhost:${cfg.web.port}`));
-        console.log(chalk.white(`  DevTools: http://localhost:${cfg.web.port}`));
-        console.log(chalk.white(`  Kanban: http://localhost:${cfg.web.port}/kanban`));
-        console.log(chalk.white(`  Config: http://localhost:${cfg.web.port}/config`));
-        console.log(chalk.gray('\nPress Ctrl+C to stop\n'));
-
-        if (cfg.agent.autoStart) {
-          await agent.startAutonomous();
-        } else {
-          console.log(chalk.yellow('Auto-start disabled. Agent is idle.'));
-          console.log(chalk.cyan('Set AGENT_AUTO_START=true to enable autonomous mode'));
-        }
+        spinner.succeed(chalk.green('OpenQA started'));
       }
     } catch (error: any) {
       spinner.fail(chalk.red('Failed to start OpenQA'));
