@@ -1,5 +1,5 @@
 {
-  "name": "open-qa",
+  "name": "@openqa/cli",
   "version": "1.0.1",
   "description": "Autonomous QA testing agent powered by Orka.js",
   "type": "module",
