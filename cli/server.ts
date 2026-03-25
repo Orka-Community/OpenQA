@@ -167,158 +167,482 @@ export async function startWebServer() {
           <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
           <script src="https://cdn.jsdelivr.net/npm/@xyflow/react@11/dist/umd/index.js"></script>
           <style>
-            body { font-family: system-ui; max-width: 1600px; margin: 20px auto; padding: 20px; background: #0f172a; color: #e2e8f0; }
-            h1 { color: #f97316; margin-bottom: 30px; }
-            .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 24px; margin: 20px 0; }
-            .card-header { display: flex; justify-content: between; align-items: center; margin-bottom: 20px; }
-            .card-title { font-size: 18px; font-weight: 600; color: #f97316; }
-            .status { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; 
+              background: #0a0a0a; 
+              color: #ffffff; 
+              min-height: 100vh;
+              overflow-x: hidden;
+              line-height: 1.6;
+            }
+            
+            .dashboard-container {
+              max-width: 1920px;
+              margin: 0 auto;
+              padding: 20px;
+              min-height: 100vh;
+            }
+            
+            .dashboard-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 32px;
+              padding: 24px 32px;
+              background: linear-gradient(135deg, #1a1a1a, #2a2a2a);
+              border-radius: 16px;
+              border: 1px solid #333333;
+              backdrop-filter: blur(10px);
+            }
+            
+            .dashboard-title {
+              font-size: 32px;
+              font-weight: 700;
+              color: #f97316;
+              margin: 0;
+              letter-spacing: -0.5px;
+            }
+            
+            .nav {
+              display: flex;
+              gap: 8px;
+              background: rgba(255, 255, 255, 0.05);
+              padding: 4px;
+              border-radius: 12px;
+            }
+            
+            .nav-links a {
+              color: #9ca3af;
+              text-decoration: none;
+              font-weight: 500;
+              padding: 12px 24px;
+              border-radius: 8px;
+              transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+              display: flex;
+              align-items: center;
+              gap: 8px;
+            }
+            
+            .nav-links a:hover, .nav-links a.active {
+              color: #ffffff;
+              background: #f97316;
+              transform: translateY(-1px);
+            }
+            
+            .connection-status {
+              padding: 8px 16px;
+              border-radius: 20px;
+              font-size: 12px;
+              font-weight: 600;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            
             .status.running { background: linear-gradient(135deg, #10b981, #059669); color: white; }
             .status.idle { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; }
             .status.error { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
             .status.paused { background: linear-gradient(135deg, #64748b, #475569); color: white; }
-            .nav { display: flex; justify-content: space-between; align-items: center; margin: 20px 0; padding: 15px; background: #1e293b; border-radius: 12px; }
-            .nav-links { display: flex; gap: 30px; }
-            .nav-links a { color: #94a3b8; text-decoration: none; font-weight: 500; transition: color 0.2s; }
-            .nav-links a:hover, .nav-links a.active { color: #f97316; }
-            .grid { display: grid; gap: 20px; }
-            .grid-2 { grid-template-columns: repeat(2, 1fr); }
-            .grid-3 { grid-template-columns: repeat(3, 1fr); }
-            .grid-4 { grid-template-columns: repeat(4, 1fr); }
-            .metric-card { 
-              background: linear-gradient(135deg, #1e293b, #334155); 
-              border: 1px solid #334155; 
-              border-radius: 12px; 
-              padding: 20px; 
-              text-align: center;
+            
+            /* Metrics Grid */
+            .metrics-grid {
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+              gap: 24px;
+              margin-bottom: 32px;
+            }
+            
+            .metric-card {
+              background: linear-gradient(145deg, #1a1a1a, #2d2d2d);
+              border: 1px solid #333333;
+              border-radius: 16px;
+              padding: 28px 24px;
+              position: relative;
+              overflow: hidden;
+              transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+              min-height: 160px;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
+            }
+            
+            .metric-card::before {
+              content: '';
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              height: 4px;
+              background: linear-gradient(90deg, #f97316, #ea580c, #f59e0b);
+              background-size: 200% 100%;
+              animation: shimmer 3s ease-in-out infinite;
+            }
+            
+            @keyframes shimmer {
+              0%, 100% { background-position: -200% 0; }
+              50% { background-position: 200% 0; }
+            }
+            
+            .metric-card:hover {
+              transform: translateY(-4px);
+              border-color: #f97316;
+              box-shadow: 0 20px 40px rgba(249, 115, 22, 0.15);
+            }
+            
+            .metric-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              margin-bottom: 16px;
+            }
+            
+            .metric-label {
+              color: #9ca3af;
+              font-size: 14px;
+              font-weight: 500;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            
+            .metric-icon {
+              width: 40px;
+              height: 40px;
+              background: rgba(249, 115, 22, 0.1);
+              border-radius: 12px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 20px;
+            }
+            
+            .metric-value {
+              font-size: 42px;
+              font-weight: 700;
+              color: #f97316;
+              margin: 8px 0;
+              line-height: 1;
+              background: linear-gradient(135deg, #f97316, #fbbf24);
+              -webkit-background-clip: text;
+              -webkit-text-fill-color: transparent;
+              background-clip: text;
+            }
+            
+            .metric-change {
+              font-size: 13px;
+              font-weight: 600;
+              display: flex;
+              align-items: center;
+              gap: 4px;
+            }
+            
+            .metric-change.positive { color: #10b981; }
+            .metric-change.negative { color: #ef4444; }
+            
+            /* Main Content Grid */
+            .main-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 24px;
+              margin-bottom: 32px;
+            }
+            
+            .card {
+              background: linear-gradient(145deg, #1a1a1a, #2d2d2d);
+              border: 1px solid #333333;
+              border-radius: 16px;
+              padding: 28px;
+              position: relative;
+              overflow: hidden;
+              transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            
+            .card:hover {
+              border-color: #444444;
+              transform: translateY(-2px);
+            }
+            
+            .card-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 24px;
+            }
+            
+            .card-title {
+              font-size: 20px;
+              font-weight: 600;
+              color: #ffffff;
+              margin: 0;
+            }
+            
+            .tabs {
+              display: flex;
+              gap: 4px;
+              background: rgba(255, 255, 255, 0.05);
+              padding: 4px;
+              border-radius: 12px;
+            }
+            
+            .tab {
+              padding: 10px 20px;
+              background: transparent;
+              border: none;
+              border-radius: 8px;
+              color: #9ca3af;
+              font-weight: 500;
+              cursor: pointer;
+              transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            
+            .tab.active {
+              background: #f97316;
+              color: white;
+            }
+            
+            .tab:hover:not(.active) {
+              color: #ffffff;
+              background: rgba(255, 255, 255, 0.1);
+            }
+            
+            .chart-container {
+              position: relative;
+              height: 320px;
+              margin: 20px 0;
+            }
+            
+            .hierarchy-container {
+              height: 420px;
+              border: 1px solid #333333;
+              border-radius: 12px;
+              background: #0a0a0a;
+              overflow: hidden;
+            }
+            
+            /* Activity Feed */
+            .activity-feed {
+              max-height: 400px;
+              overflow-y: auto;
+              padding-right: 8px;
+            }
+            
+            .activity-feed::-webkit-scrollbar {
+              width: 6px;
+            }
+            
+            .activity-feed::-webkit-scrollbar-track {
+              background: rgba(255, 255, 255, 0.05);
+              border-radius: 3px;
+            }
+            
+            .activity-feed::-webkit-scrollbar-thumb {
+              background: #f97316;
+              border-radius: 3px;
+            }
+            
+            .activity-item {
+              background: rgba(255, 255, 255, 0.03);
+              border: 1px solid rgba(255, 255, 255, 0.08);
+              border-left: 4px solid #f97316;
+              border-radius: 12px;
+              padding: 16px 20px;
+              margin-bottom: 12px;
+              font-size: 14px;
+              transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
               position: relative;
               overflow: hidden;
             }
-            .metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #f97316, #ea580c); }
-            .metric-value { font-size: 32px; font-weight: bold; color: #f97316; margin: 10px 0; }
-            .metric-label { color: #94a3b8; font-size: 14px; font-weight: 500; }
-            .metric-change { font-size: 12px; margin-top: 5px; }
-            .metric-change.positive { color: #10b981; }
-            .metric-change.negative { color: #ef4444; }
-            .chart-container { position: relative; height: 300px; margin: 20px 0; }
-            .hierarchy-container { height: 400px; border: 1px solid #334155; border-radius: 8px; background: #0f172a; }
-            .activity-item { 
-              background: #334155; 
-              padding: 15px; 
-              margin: 10px 0; 
-              border-radius: 8px; 
-              border-left: 4px solid #f97316;
-              font-size: 14px;
-              transition: all 0.2s;
+            
+            .activity-item::before {
+              content: '';
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              height: 1px;
+              background: linear-gradient(90deg, transparent, rgba(249, 115, 22, 0.3), transparent);
+              opacity: 0;
+              transition: opacity 0.3s;
             }
-            .activity-item:hover { transform: translateX(4px); background: #475569; }
+            
+            .activity-item:hover {
+              background: rgba(255, 255, 255, 0.06);
+              border-left-color: #fbbf24;
+              transform: translateX(8px);
+            }
+            
+            .activity-item:hover::before {
+              opacity: 1;
+            }
+            
             .activity-item.error { border-left-color: #ef4444; }
             .activity-item.success { border-left-color: #10b981; }
             .activity-item.warning { border-left-color: #f59e0b; }
-            .activity-time { color: #64748b; font-size: 12px; }
-            .intervention-request {
-              background: linear-gradient(135deg, #7c2d12, #92400e);
-              border: 1px solid #dc2626;
-              padding: 20px;
-              border-radius: 12px;
-              margin: 15px 0;
+            
+            .activity-time {
+              color: #6b7280;
+              font-size: 12px;
+              margin-top: 8px;
+              display: flex;
+              align-items: center;
+              gap: 4px;
+            }
+            
+            /* Buttons */
+            .btn {
+              background: linear-gradient(135deg, #f97316, #ea580c);
+              color: white;
+              border: none;
+              padding: 12px 24px;
+              border-radius: 10px;
+              cursor: pointer;
+              font-size: 14px;
+              font-weight: 600;
+              margin: 4px;
+              transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
               position: relative;
+              overflow: hidden;
             }
-            .intervention-request::before { content: '🚨'; position: absolute; top: 15px; right: 15px; font-size: 20px; }
-            .intervention-request h4 { color: #fbbf24; margin: 0 0 10px 0; }
-            .btn { 
-              background: linear-gradient(135deg, #f97316, #ea580c); 
-              color: white; 
-              border: none; 
-              padding: 10px 20px; 
-              border-radius: 8px; 
-              cursor: pointer; 
-              font-size: 14px; 
-              font-weight: 500;
-              margin: 5px;
-              transition: all 0.2s;
+            
+            .btn::before {
+              content: '';
+              position: absolute;
+              top: 0;
+              left: -100%;
+              width: 100%;
+              height: 100%;
+              background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+              transition: left 0.5s;
             }
-            .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3); }
+            
+            .btn:hover {
+              transform: translateY(-2px);
+              box-shadow: 0 8px 24px rgba(249, 115, 22, 0.3);
+            }
+            
+            .btn:hover::before {
+              left: 100%;
+            }
+            
             .btn-success { background: linear-gradient(135deg, #10b981, #059669); }
-            .btn-success:hover { box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
+            .btn-success:hover { box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3); }
             .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); }
-            .btn-danger:hover { box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); }
+            .btn-danger:hover { box-shadow: 0 8px 24px rgba(239, 68, 68, 0.3); }
+            
+            /* Performance bars */
+            .performance-bar {
+              height: 6px;
+              background: rgba(255, 255, 255, 0.1);
+              border-radius: 3px;
+              overflow: hidden;
+              margin: 8px 0;
+            }
+            
+            .performance-fill {
+              height: 100%;
+              background: linear-gradient(90deg, #10b981, #f97316);
+              transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+              border-radius: 3px;
+            }
+            
+            /* Responsive */
+            @media (max-width: 1200px) {
+              .main-grid {
+                grid-template-columns: 1fr;
+              }
+            }
+            
+            @media (max-width: 768px) {
+              .dashboard-container {
+                padding: 16px;
+              }
+              
+              .metrics-grid {
+                grid-template-columns: 1fr;
+                gap: 16px;
+              }
+              
+              .dashboard-header {
+                flex-direction: column;
+                gap: 16px;
+                padding: 20px;
+              }
+              
+              .dashboard-title {
+                font-size: 24px;
+              }
+              
+              .metric-value {
+                font-size: 32px;
+              }
+            }
+            
+            /* Loading animation */
             .pulse { animation: pulse 2s infinite; }
             @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-            .loading { color: #f59e0b; }
-            .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
-            .tab { padding: 10px 20px; background: #334155; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
-            .tab.active { background: #f97316; color: white; }
-            .tab-content { display: none; }
-            .tab-content.active { display: block; }
-            .agent-node { 
-              background: #1e293b; 
-              border: 2px solid #f97316; 
-              border-radius: 8px; 
-              padding: 10px; 
-              margin: 10px; 
-              text-align: center;
-            }
-            .performance-bar { 
-              height: 8px; 
-              background: #334155; 
-              border-radius: 4px; 
-              overflow: hidden; 
-              margin: 10px 0;
-            }
-            .performance-fill { 
-              height: 100%; 
-              background: linear-gradient(90deg, #10b981, #f97316); 
-              transition: width 1s ease;
-            }
+          </style>
           </style>
         </head>
         <body>
-          <div class="nav">
-            <div class="nav-links">
-              <a href="/" class="active">📊 Dashboard</a>
-              <a href="/kanban">📋 Kanban</a>
-              <a href="/config">⚙️ Config</a>
+          <div class="dashboard-container">
+            <header class="dashboard-header">
+              <h1 class="dashboard-title">🤖 OpenQA Professional Dashboard</h1>
+              <nav class="nav">
+                <div class="nav-links">
+                  <a href="/" class="active">📊 Dashboard</a>
+                  <a href="/kanban">📋 Kanban</a>
+                  <a href="/config">⚙️ Config</a>
+                </div>
+                <span id="connection-status" class="connection-status status idle">🔌 Connecting...</span>
+              </nav>
+            </header>
+            
+            <!-- Key Metrics -->
+            <div class="metrics-grid">
+              <div class="metric-card">
+                <div class="metric-header">
+                  <div class="metric-label">🤖 Active Agents</div>
+                  <div class="metric-icon">🤖</div>
+                </div>
+                <div class="metric-value" id="active-agents">0</div>
+                <div class="metric-change positive">↑ 2 from last hour</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-header">
+                  <div class="metric-label">📋 Total Actions</div>
+                  <div class="metric-icon">📋</div>
+                </div>
+                <div class="metric-value" id="total-actions">0</div>
+                <div class="metric-change positive">↑ 12% increase</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-header">
+                  <div class="metric-label">🐛 Bugs Found</div>
+                  <div class="metric-icon">🐛</div>
+                </div>
+                <div class="metric-value" id="bugs-found">0</div>
+                <div class="metric-change negative">↓ 3 from yesterday</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-header">
+                  <div class="metric-label">⚡ Success Rate</div>
+                  <div class="metric-icon">⚡</div>
+                </div>
+                <div class="metric-value" id="success-rate">0%</div>
+                <div class="metric-change positive">↑ 5% improvement</div>
+              </div>
             </div>
-            <div>
-              <span id="connection-status" class="status idle">🔌 Connecting...</span>
-            </div>
-          </div>
-          
-          <!-- Key Metrics -->
-          <div class="grid-4">
-            <div class="metric-card">
-              <div class="metric-label">🤖 Active Agents</div>
-              <div class="metric-value" id="active-agents">0</div>
-              <div class="metric-change positive">↑ 2 from last hour</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-label">📋 Total Actions</div>
-              <div class="metric-value" id="total-actions">0</div>
-              <div class="metric-change positive">↑ 12% increase</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-label">🐛 Bugs Found</div>
-              <div class="metric-value" id="bugs-found">0</div>
-              <div class="metric-change negative">↓ 3 from yesterday</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-label">⚡ Success Rate</div>
-              <div class="metric-value" id="success-rate">0%</div>
-              <div class="metric-change positive">↑ 5% improvement</div>
-            </div>
-          </div>
 
           <!-- Charts and Hierarchy -->
-          <div class="grid-2">
+          <div class="main-grid">
             <div class="card">
               <div class="card-header">
                 <h2 class="card-title">📈 Performance Metrics</h2>
-              </div>
-              <div class="tabs">
-                <div class="tab active" onclick="switchTab('performance')">Performance</div>
-                <div class="tab" onclick="switchTab('activity')">Activity</div>
-                <div class="tab" onclick="switchTab('errors')">Error Rate</div>
+                <div class="tabs">
+                  <div class="tab active" onclick="switchTab('performance')">Performance</div>
+                  <div class="tab" onclick="switchTab('activity')">Activity</div>
+                  <div class="tab" onclick="switchTab('errors')">Error Rate</div>
+                </div>
               </div>
               <div class="chart-container">
                 <canvas id="performanceChart"></canvas>
@@ -343,36 +667,36 @@ export async function startWebServer() {
           <div class="card">
             <div class="card-header">
               <h2 class="card-title">🤖 Agent Details</h2>
-            </div>
-            <div class="tabs">
-              <div class="tab active" onclick="switchAgentTab('active')">Active Agents</div>
-              <div class="tab" onclick="switchAgentTab('specialists')">Specialists</div>
-              <div class="tab" onclick="switchAgentTab('performance')">Performance</div>
+              <div class="tabs">
+                <div class="tab active" onclick="switchAgentTab('active')">Active Agents</div>
+                <div class="tab" onclick="switchAgentTab('specialists')">Specialists</div>
+                <div class="tab" onclick="switchAgentTab('performance')">Performance</div>
+              </div>
             </div>
             <div id="active-agents-content" class="tab-content active">
               <div id="active-agents-list">
-                <p style="color: #64748b;">Loading agents...</p>
+                <p style="color: #9ca3af;">Loading agents...</p>
               </div>
             </div>
             <div id="specialists-content" class="tab-content">
               <div id="specialists-list">
-                <p style="color: #64748b;">No specialists active</p>
+                <p style="color: #9ca3af;">No specialists active</p>
               </div>
             </div>
             <div id="performance-content" class="tab-content">
               <div id="performance-metrics">
-                <p style="color: #64748b;">Performance data loading...</p>
+                <p style="color: #9ca3af;">Performance data loading...</p>
               </div>
             </div>
           </div>
 
           <!-- Activity and Interventions -->
-          <div class="grid-2">
+          <div class="main-grid">
             <div class="card">
               <div class="card-header">
                 <h2 class="card-title">⚡ Recent Activity</h2>
               </div>
-              <div id="recent-activities" style="max-height: 400px; overflow-y: auto;">
+              <div class="activity-feed" id="recent-activities">
                 <div class="activity-item">
                   <div>🔄 Waiting for agent activity...</div>
                   <div class="activity-time">System ready</div>
@@ -384,20 +708,20 @@ export async function startWebServer() {
               <div class="card-header">
                 <h2 class="card-title">🚨 Human Interventions</h2>
               </div>
-              <div id="interventions-list" style="max-height: 400px; overflow-y: auto;">
-                <p style="color: #64748b;">No interventions required</p>
+              <div class="activity-feed" id="interventions-list">
+                <p style="color: #9ca3af;">No interventions required</p>
               </div>
             </div>
           </div>
 
           <!-- Tasks and Issues -->
-          <div class="grid-2">
+          <div class="main-grid">
             <div class="card">
               <div class="card-header">
                 <h2 class="card-title">📝 Current Tasks</h2>
               </div>
-              <div id="current-tasks" style="max-height: 400px; overflow-y: auto;">
-                <p style="color: #64748b;">No active tasks</p>
+              <div class="activity-feed" id="current-tasks">
+                <p style="color: #9ca3af;">No active tasks</p>
               </div>
             </div>
             
@@ -405,40 +729,8 @@ export async function startWebServer() {
               <div class="card-header">
                 <h2 class="card-title">⚠️ Issues Encountered</h2>
               </div>
-              <div id="issues-list" style="max-height: 400px; overflow-y: auto;">
-                <p style="color: #64748b;">No issues</p>
-              </div>
-            </div>
-          </div>
-          
-          <div class="grid">
-            <div class="card">
-              <h2>🤖 Active Agents</h2>
-              <div id="active-agents-list">
-                <p style="color: #64748b;">No active agents</p>
-              </div>
-            </div>
-            
-            <div class="card">
-              <h2>🚨 Human Interventions</h2>
-              <div id="interventions-list">
-                <p style="color: #64748b;">No interventions required</p>
-              </div>
-            </div>
-          </div>
-          
-          <div class="grid">
-            <div class="card">
-              <h2>📝 Current Tasks</h2>
-              <div id="current-tasks">
-                <p style="color: #64748b;">No active tasks</p>
-              </div>
-            </div>
-            
-            <div class="card">
-              <h2>⚠️ Issues Encountered</h2>
-              <div id="issues-list">
-                <p style="color: #64748b;">No issues</p>
+              <div class="activity-feed" id="issues-list">
+                <p style="color: #9ca3af;">No issues</p>
               </div>
             </div>
           </div>
