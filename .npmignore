@@ -1,0 +1,46 @@
+# Source files
+*.ts
+!*.d.ts
+tsconfig.json
+tsup.config.ts
+
+# Development
+node_modules
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# Testing
+*.test.ts
+*.spec.ts
+__tests__
+
+# Build artifacts
+*.log
+npm-debug.log*
+
+# Data
+data/
+workspace/
+generated-tests/
+
+# Web UI (not needed for CLI package)
+web/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation (keep README and LICENSE)
+CONTRIBUTING.md
+.github/

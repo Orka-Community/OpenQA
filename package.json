@@ -3,19 +3,48 @@
   "version": "1.0.0",
   "description": "Autonomous QA testing agent powered by Orka.js",
   "type": "module",
+  "main": "./dist/cli/index.js",
   "bin": {
     "openqa": "./dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "install.sh",
+    "database/schema.sql",
+    "database/schema-v2.sql"
+  ],
   "scripts": {
     "dev": "tsx watch agent/index.ts",
     "build": "tsup",
     "start": "node dist/cli/index.js start",
+    "prepublishOnly": "npm run build",
     "web:dev": "cd web && npm run dev",
     "web:build": "cd web && npm run build"
   },
-  "keywords": ["qa", "testing", "automation", "ai", "orkajs"],
-  "author": "Orka.js",
+  "keywords": [
+    "qa",
+    "testing",
+    "automation",
+    "ai",
+    "orkajs",
+    "autonomous",
+    "agent",
+    "e2e",
+    "playwright",
+    "test-generation"
+  ],
+  "author": "Orka.js Team",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Orka-Community/OpenQA.git"
+  },
+  "homepage": "https://openqa.orkajs.com",
+  "bugs": {
+    "url": "https://github.com/Orka-Community/OpenQA/issues"
+  },
   "dependencies": {
     "@orka-js/agent": "^1.0.0",
     "@orka-js/openai": "^1.0.0",

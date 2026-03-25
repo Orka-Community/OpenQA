@@ -1,7 +1,7 @@
 import { ReActAgent } from '@orka-js/agent';
 import { OpenAIAdapter } from '@orka-js/openai';
 import { AnthropicAdapter } from '@orka-js/anthropic';
-import { ConversationMemory } from '@orka-js/memory-store';
+import { SessionMemory } from '@orka-js/memory-store';
 import { Tracer } from '@orka-js/observability';
 import { EventEmitter } from 'events';
 import { OpenQADatabase } from '../database/index.js';
@@ -74,17 +74,17 @@ export class OpenQAAgent extends EventEmitter {
     ];
 
     const llm = this.createLLMAdapter();
-    const memory = new ConversationMemory({ maxMessages: 50 });
-    const tracer = new Tracer({ enabled: true });
+    const memory = new SessionMemory({ maxMessages: 50 });
+    const tracer = new Tracer({ logLevel: 'info' });
 
     // Get enabled skills and generate skill prompt
     const enabledSkills = this.skillManager.getEnabledSkills();
     const skillPrompt = this.skillManager.generateSkillPrompt(enabledSkills);
 
-    this.agent = new ReActAgent({
-      llm,
+    const agentConfig = {
+      goal: "Test the SaaS application comprehensively and identify bugs",
       tools: allTools,
-      memory,
+      tracer,
       maxIterations: cfg.agent.maxIterations,
       systemPrompt: `You are OpenQA, an autonomous QA testing agent - intelligent and thorough like a senior QA engineer.
 
@@ -116,7 +116,9 @@ Reporting guidelines:
 ${skillPrompt}
 
 Always provide clear, actionable information with steps to reproduce. Think step by step like a human QA expert.`
-    });
+    };
+
+    this.agent = new ReActAgent(agentConfig, llm, memory);
 
     // Initialize specialist manager
     this.specialistManager = new SpecialistAgentManager(
