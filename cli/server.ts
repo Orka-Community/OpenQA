@@ -81,55 +81,407 @@ export async function startWebServer() {
     }
   });
 
-  // Simple HTML pages for Web UI, Kanban, and Config
+  // Human interventions
+  app.post('/api/intervention/:id', (req, res) => {
+    const { id } = req.params;
+    const { response } = req.body;
+    
+    // Handle intervention response (approve/reject)
+    console.log(`Intervention ${id}: ${response}`);
+    
+    // Broadcast to all WebSocket clients
+    broadcast({ 
+      type: 'intervention-response', 
+      data: { id, response, timestamp: new Date().toISOString() }
+    });
+    
+    res.json({ success: true });
+  });
+
+  // Current tasks
+  app.get('/api/tasks', async (req, res) => {
+    // Mock tasks for now
+    const tasks = [
+      {
+        id: 'task_1',
+        name: 'Scan Application',
+        status: 'completed',
+        agent: 'Main Agent',
+        started_at: new Date(Date.now() - 300000).toISOString(),
+        completed_at: new Date(Date.now() - 240000).toISOString(),
+        result: 'Found 5 testable components'
+      },
+      {
+        id: 'task_2',
+        name: 'Generate Tests',
+        status: 'in-progress',
+        agent: 'Main Agent',
+        started_at: new Date(Date.now() - 180000).toISOString(),
+        progress: '60%'
+      },
+      {
+        id: 'task_3',
+        name: 'Authentication Test',
+        status: 'pending',
+        agent: 'Auth Specialist',
+        dependencies: ['task_2']
+      }
+    ];
+    
+    res.json(tasks);
+  });
+
+  // Issues encountered
+  app.get('/api/issues', async (req, res) => {
+    const issues = [
+      {
+        id: 'issue_1',
+        type: 'authentication',
+        severity: 'warning',
+        message: 'Admin area requires authentication',
+        agent: 'Main Agent',
+        timestamp: new Date(Date.now() - 120000).toISOString(),
+        status: 'pending'
+      },
+      {
+        id: 'issue_2',
+        type: 'network',
+        severity: 'error',
+        message: 'Failed to connect to external API',
+        agent: 'API Tester',
+        timestamp: new Date(Date.now() - 60000).toISOString(),
+        status: 'resolved'
+      }
+    ];
+    
+    res.json(issues);
+  });
+
+  // Real-time Dashboard
   app.get('/', (req, res) => {
     res.send(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>OpenQA - Dashboard</title>
+          <title>OpenQA - Real-time Dashboard</title>
           <style>
-            body { font-family: system-ui; max-width: 1200px; margin: 40px auto; padding: 20px; background: #0f172a; color: #e2e8f0; }
+            body { font-family: system-ui; max-width: 1400px; margin: 40px auto; padding: 20px; background: #0f172a; color: #e2e8f0; }
             h1 { color: #38bdf8; }
             .card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin: 20px 0; }
             .status { display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 14px; }
             .status.running { background: #10b981; color: white; }
             .status.idle { background: #f59e0b; color: white; }
+            .status.error { background: #ef4444; color: white; }
+            .status.paused { background: #64748b; color: white; }
             a { color: #38bdf8; text-decoration: none; }
             a:hover { text-decoration: underline; }
             nav { margin: 20px 0; }
             nav a { margin-right: 20px; }
+            .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+            .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+            .activity-item { 
+              background: #334155; 
+              padding: 12px; 
+              margin: 8px 0; 
+              border-radius: 6px; 
+              border-left: 3px solid #38bdf8;
+              font-size: 14px;
+            }
+            .activity-item.error { border-left-color: #ef4444; }
+            .activity-item.success { border-left-color: #10b981; }
+            .activity-item.warning { border-left-color: #f59e0b; }
+            .activity-time { color: #64748b; font-size: 12px; }
+            .metric { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; }
+            .metric-value { font-size: 24px; font-weight: bold; color: #38bdf8; }
+            .metric-label { color: #94a3b8; font-size: 14px; }
+            .intervention-request {
+              background: #7c2d12;
+              border: 1px solid #dc2626;
+              padding: 15px;
+              border-radius: 8px;
+              margin: 10px 0;
+            }
+            .intervention-request h4 { color: #fbbf24; margin: 0 0 8px 0; }
+            .btn { 
+              background: #38bdf8; 
+              color: white; 
+              border: none; 
+              padding: 8px 16px; 
+              border-radius: 6px; 
+              cursor: pointer; 
+              font-size: 14px; 
+              margin: 5px;
+            }
+            .btn:hover { background: #0ea5e9; }
+            .btn-success { background: #10b981; }
+            .btn-success:hover { background: #059669; }
+            .btn-danger { background: #ef4444; }
+            .btn-danger:hover { background: #dc2626; }
+            .pulse { animation: pulse 2s infinite; }
+            @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+            .loading { color: #f59e0b; }
           </style>
         </head>
         <body>
-          <h1>🤖 OpenQA Dashboard</h1>
+          <h1>🤖 OpenQA Real-time Dashboard</h1>
           <nav>
             <a href="/">Dashboard</a>
             <a href="/kanban">Kanban</a>
             <a href="/config">Config</a>
+            <span style="color: #64748b;">|</span>
+            <span id="connection-status" class="status idle">🔌 Connecting...</span>
           </nav>
-          <div class="card">
-            <h2>Status</h2>
-            <p>Agent: <span class="status idle">Idle</span></p>
-            <p>Target: ${cfg.saas.url || 'Not configured'}</p>
-            <p>Auto-start: ${cfg.agent.autoStart ? 'Enabled' : 'Disabled'}</p>
+          
+          <div class="grid-3">
+            <div class="card">
+              <h2>🤖 Agent Status</h2>
+              <div class="metric">
+                <span class="metric-label">Status</span>
+                <span id="agent-status" class="status idle">Idle</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Target</span>
+                <span id="target-url">${cfg.saas.url || 'Not configured'}</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Active Agents</span>
+                <span id="active-agents" class="metric-value">0</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Current Session</span>
+                <span id="session-id">None</span>
+              </div>
+            </div>
+            
+            <div class="card">
+              <h2>📊 Session Metrics</h2>
+              <div class="metric">
+                <span class="metric-label">Total Actions</span>
+                <span id="total-actions" class="metric-value">0</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Bugs Found</span>
+                <span id="bugs-found" class="metric-value">0</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Tests Generated</span>
+                <span id="tests-generated" class="metric-value">0</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Success Rate</span>
+                <span id="success-rate" class="metric-value">0%</span>
+              </div>
+            </div>
+            
+            <div class="card">
+              <h2>⚡ Recent Activity</h2>
+              <div id="recent-activities">
+                <div class="activity-item">
+                  <div>🔄 Waiting for agent activity...</div>
+                  <div class="activity-time">System ready</div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="card">
-            <h2>Quick Links</h2>
-            <ul>
-              <li><a href="/kanban">View Kanban Board</a></li>
-              <li><a href="/config">Configure OpenQA</a></li>
-            </ul>
+          
+          <div class="grid">
+            <div class="card">
+              <h2>🤖 Active Agents</h2>
+              <div id="active-agents-list">
+                <p style="color: #64748b;">No active agents</p>
+              </div>
+            </div>
+            
+            <div class="card">
+              <h2>🚨 Human Interventions</h2>
+              <div id="interventions-list">
+                <p style="color: #64748b;">No interventions required</p>
+              </div>
+            </div>
           </div>
-          <div class="card">
-            <h2>Getting Started</h2>
-            <p>Configure your SaaS application target and start testing:</p>
-            <ol>
-              <li>Set SAAS_URL environment variable or use the <a href="/config">Config page</a></li>
-              <li>Enable auto-start: <code>export AGENT_AUTO_START=true</code></li>
-              <li>Restart OpenQA</li>
-            </ol>
+          
+          <div class="grid">
+            <div class="card">
+              <h2>📝 Current Tasks</h2>
+              <div id="current-tasks">
+                <p style="color: #64748b;">No active tasks</p>
+              </div>
+            </div>
+            
+            <div class="card">
+              <h2>⚠️ Issues Encountered</h2>
+              <div id="issues-list">
+                <p style="color: #64748b;">No issues</p>
+              </div>
+            </div>
           </div>
+
+          <script>
+            let ws;
+            let activities = [];
+            
+            function connectWebSocket() {
+              const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+              ws = new WebSocket(\`\${protocol}//\${window.location.host}\`);
+              
+              ws.onopen = () => {
+                document.getElementById('connection-status').textContent = '🟢 Connected';
+                document.getElementById('connection-status').className = 'status running';
+              };
+              
+              ws.onclose = () => {
+                document.getElementById('connection-status').textContent = '🔴 Disconnected';
+                document.getElementById('connection-status').className = 'status error';
+                // Reconnect after 3 seconds
+                setTimeout(connectWebSocket, 3000);
+              };
+              
+              ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleWebSocketMessage(data);
+              };
+            }
+            
+            function handleWebSocketMessage(data) {
+              switch(data.type) {
+                case 'status':
+                  updateAgentStatus(data.data);
+                  break;
+                case 'activity':
+                  addActivity(data.data);
+                  break;
+                case 'intervention':
+                  addIntervention(data.data);
+                  break;
+                case 'agents':
+                  updateActiveAgents(data.data);
+                  break;
+                case 'session':
+                  updateSessionMetrics(data.data);
+                  break;
+              }
+            }
+            
+            function updateAgentStatus(status) {
+              const statusEl = document.getElementById('agent-status');
+              statusEl.textContent = status.isRunning ? 'Running' : 'Idle';
+              statusEl.className = \`status \${status.isRunning ? 'running' : 'idle'}\`;
+            }
+            
+            function updateSessionMetrics(session) {
+              document.getElementById('total-actions').textContent = session.total_actions || 0;
+              document.getElementById('bugs-found').textContent = session.bugs_found || 0;
+              document.getElementById('session-id').textContent = session.id || 'None';
+              
+              const successRate = session.total_actions > 0 
+                ? Math.round(((session.total_actions - (session.errors || 0)) / session.total_actions) * 100)
+                : 0;
+              document.getElementById('success-rate').textContent = successRate + '%';
+            }
+            
+            function addActivity(activity) {
+              activities.unshift(activity);
+              if (activities.length > 10) activities.pop();
+              
+              const container = document.getElementById('recent-activities');
+              container.innerHTML = activities.map(a => \`
+                <div class="activity-item \${a.type}">
+                  <div>\${a.message}</div>
+                  <div class="activity-time">\${new Date(a.timestamp).toLocaleTimeString()}</div>
+                </div>
+              \`).join('');
+            }
+            
+            function updateActiveAgents(agents) {
+              const countEl = document.getElementById('active-agents');
+              const listEl = document.getElementById('active-agents-list');
+              
+              countEl.textContent = agents.length;
+              
+              if (agents.length === 0) {
+                listEl.innerHTML = '<p style="color: #64748b;">No active agents</p>';
+              } else {
+                listEl.innerHTML = agents.map(agent => \`
+                  <div class="activity-item">
+                    <div><strong>\${agent.name}</strong> - \${agent.status}</div>
+                    <div class="activity-time">Purpose: \${agent.purpose}</div>
+                  </div>
+                \`).join('');
+              }
+            }
+            
+            function addIntervention(intervention) {
+              const container = document.getElementById('interventions-list');
+              const interventionEl = document.createElement('div');
+              interventionEl.className = 'intervention-request';
+              interventionEl.innerHTML = \`
+                <h4>🚨 \${intervention.title}</h4>
+                <p>\${intervention.description}</p>
+                <div>
+                  <button class="btn btn-success" onclick="respondToIntervention('\${intervention.id}', 'approve')">✅ Approve</button>
+                  <button class="btn btn-danger" onclick="respondToIntervention('\${intervention.id}', 'reject')">❌ Reject</button>
+                </div>
+              \`;
+              container.appendChild(interventionEl);
+            }
+            
+            function respondToIntervention(interventionId, response) {
+              fetch('/api/intervention/' + interventionId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ response })
+              }).then(() => {
+                // Remove the intervention from UI
+                location.reload();
+              });
+            }
+            
+            // Start WebSocket connection
+            connectWebSocket();
+            
+            // Load initial data
+            fetch('/api/status').then(r => r.json()).then(updateAgentStatus);
+            fetch('/api/sessions?limit=1').then(r => r.json()).then(sessions => {
+              if (sessions.length > 0) updateSessionMetrics(sessions[0]);
+            });
+            
+            // Load current tasks
+            fetch('/api/tasks').then(r => r.json()).then(updateCurrentTasks);
+            
+            // Load issues
+            fetch('/api/issues').then(r => r.json()).then(updateIssues);
+            
+            function updateCurrentTasks(tasks) {
+              const container = document.getElementById('current-tasks');
+              if (tasks.length === 0) {
+                container.innerHTML = '<p style="color: #64748b;">No active tasks</p>';
+              } else {
+                container.innerHTML = tasks.map(task => \`
+                  <div class="activity-item">
+                    <div><strong>\${task.name}</strong> - \${task.status}</div>
+                    <div class="activity-time">Agent: \${task.agent} | \${task.progress || ''}</div>
+                    \${task.result ? \`<div style="color: #10b981; margin-top: 4px;">\${task.result}</div>\` : ''}
+                  </div>
+                \`).join('');
+              }
+            }
+            
+            function updateIssues(issues) {
+              const container = document.getElementById('issues-list');
+              if (!container) return;
+              
+              if (issues.length === 0) {
+                container.innerHTML = '<p style="color: #64748b;">No issues</p>';
+              } else {
+                container.innerHTML = issues.map(issue => \`
+                  <div class="activity-item \${issue.severity}">
+                    <div><strong>\${issue.type}</strong> - \${issue.message}</div>
+                    <div class="activity-time">Agent: \${issue.agent} | Status: \${issue.status}</div>
+                  </div>
+                \`).join('');
+              }
+            }
+          </script>
         </body>
       </html>
     `);
@@ -433,11 +785,56 @@ openqa start</code></pre>
     });
   });
 
-  wss.on('connection', (ws) => {
+  function broadcast(message: any) {
+  const data = JSON.stringify(message);
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) { // WebSocket.OPEN
+      client.send(data);
+    }
+  });
+}
+
+wss.on('connection', (ws) => {
     console.log('WebSocket client connected');
+    
+    // Send initial status
+    ws.send(JSON.stringify({ 
+      type: 'status', 
+      data: { isRunning: false, target: cfg.saas.url || 'Not configured' }
+    }));
+    
+    // Send mock agent data for now
+    ws.send(JSON.stringify({ 
+      type: 'agents', 
+      data: [
+        { name: 'Main Agent', status: 'idle', purpose: 'Autonomous testing' }
+      ]
+    }));
+    
+    // Simulate some activity for demo
+    let activityCount = 0;
+    const activityInterval = setInterval(() => {
+      if (ws.readyState === ws.OPEN) {
+        const activities = [
+          { type: 'info', message: '🔍 Scanning application for test targets', timestamp: new Date().toISOString() },
+          { type: 'success', message: '✅ Found 5 testable components', timestamp: new Date().toISOString() },
+          { type: 'warning', message: '⚠️ Authentication required for admin area', timestamp: new Date().toISOString() },
+          { type: 'info', message: '🧪 Generating test scenarios', timestamp: new Date().toISOString() },
+          { type: 'success', message: '✅ Created 3 test cases', timestamp: new Date().toISOString() }
+        ];
+        
+        ws.send(JSON.stringify({ 
+          type: 'activity', 
+          data: activities[activityCount % activities.length]
+        }));
+        
+        activityCount++;
+      }
+    }, 5000);
     
     ws.on('close', () => {
       console.log('WebSocket client disconnected');
+      clearInterval(activityInterval);
     });
   });
 
