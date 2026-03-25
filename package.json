@@ -3,9 +3,9 @@
   "version": "1.0.3",
   "description": "Autonomous QA testing agent powered by Orka.js",
   "type": "module",
-  "main": "./dist/cli/index.cjs",
+  "main": "./dist/cli/index.js",
   "bin": {
-    "openqa": "./dist/cli/index.cjs"
+    "openqa": "./dist/cli/index.js"
   },
   "files": [
     "dist",

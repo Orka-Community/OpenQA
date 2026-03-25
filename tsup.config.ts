@@ -5,15 +5,12 @@ export default defineConfig([
     entry: {
       'cli/index': 'cli/index.ts'
     },
-    format: ['cjs'],  // Utiliser CJS pour le binaire avec shebang
+    format: ['esm'],
     dts: false,
-    sourcemap: false,  // Pas besoin de sourcemap pour le binaire
+    sourcemap: false,
     clean: true,
     splitting: false,
-    shims: true,
-    banner: {
-      js: '#!/usr/bin/env node'
-    }
+    shims: true
   },
   {
     entry: {
