@@ -5,9 +5,9 @@ export default defineConfig([
     entry: {
       'cli/index': 'cli/index.ts'
     },
-    format: ['esm'],
-    dts: false,  // Désactiver DTS pour éviter les erreurs de types complexes
-    sourcemap: true,
+    format: ['cjs'],  // Utiliser CJS pour le binaire avec shebang
+    dts: false,
+    sourcemap: false,  // Pas besoin de sourcemap pour le binaire
     clean: true,
     splitting: false,
     shims: true,
@@ -21,7 +21,7 @@ export default defineConfig([
       'database/index': 'database/index.ts'
     },
     format: ['esm'],
-    dts: false,  // Désactiver DTS pour éviter les erreurs de types complexes
+    dts: false,
     sourcemap: true,
     splitting: false,
     shims: true
