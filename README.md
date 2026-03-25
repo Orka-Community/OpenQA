@@ -12,7 +12,7 @@
   <a href="https://www.npmjs.com/package/openqa"><img src="https://img.shields.io/npm/v/openqa.svg" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/openqa"><img src="https://img.shields.io/npm/dm/openqa.svg" alt="npm downloads"></a>
   <a href="https://github.com/orka-js/openqa/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/openqa.svg" alt="license"></a>
-  <a href="https://orkajs.com"><img src="https://img.shields.io/badge/docs-orkajs.com-blue.svg" alt="documentation"></a>
+  <a href="https://openqa.orkajs.com"><img src="https://img.shields.io/badge/docs-orkajs.com-blue.svg" alt="documentation"></a>
   <a href="https://discord.com/invite/DScfpuPysP"><img src="https://img.shields.io/badge/discord-join%20chat-7289da.svg" alt="discord"></a>
 </p>
 
