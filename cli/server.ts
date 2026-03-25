@@ -165,13 +165,13 @@ export async function startWebServer() {
         <head>
           <title>OpenQA - Professional Dashboard</title>
           <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-          <script src="https://cdn.jsdelivr.net/npm/vis-network@latest/dist/vis-network.min.js"></script>
+          <script src="https://cdn.jsdelivr.net/npm/@xyflow/react@11/dist/umd/index.js"></script>
           <style>
             body { font-family: system-ui; max-width: 1600px; margin: 20px auto; padding: 20px; background: #0f172a; color: #e2e8f0; }
-            h1 { color: #38bdf8; margin-bottom: 30px; }
+            h1 { color: #f97316; margin-bottom: 30px; }
             .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 24px; margin: 20px 0; }
             .card-header { display: flex; justify-content: between; align-items: center; margin-bottom: 20px; }
-            .card-title { font-size: 18px; font-weight: 600; color: #38bdf8; }
+            .card-title { font-size: 18px; font-weight: 600; color: #f97316; }
             .status { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
             .status.running { background: linear-gradient(135deg, #10b981, #059669); color: white; }
             .status.idle { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; }
@@ -180,7 +180,7 @@ export async function startWebServer() {
             .nav { display: flex; justify-content: space-between; align-items: center; margin: 20px 0; padding: 15px; background: #1e293b; border-radius: 12px; }
             .nav-links { display: flex; gap: 30px; }
             .nav-links a { color: #94a3b8; text-decoration: none; font-weight: 500; transition: color 0.2s; }
-            .nav-links a:hover, .nav-links a.active { color: #38bdf8; }
+            .nav-links a:hover, .nav-links a.active { color: #f97316; }
             .grid { display: grid; gap: 20px; }
             .grid-2 { grid-template-columns: repeat(2, 1fr); }
             .grid-3 { grid-template-columns: repeat(3, 1fr); }
@@ -194,8 +194,8 @@ export async function startWebServer() {
               position: relative;
               overflow: hidden;
             }
-            .metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #38bdf8, #0ea5e9); }
-            .metric-value { font-size: 32px; font-weight: bold; color: #38bdf8; margin: 10px 0; }
+            .metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #f97316, #ea580c); }
+            .metric-value { font-size: 32px; font-weight: bold; color: #f97316; margin: 10px 0; }
             .metric-label { color: #94a3b8; font-size: 14px; font-weight: 500; }
             .metric-change { font-size: 12px; margin-top: 5px; }
             .metric-change.positive { color: #10b981; }
@@ -207,7 +207,7 @@ export async function startWebServer() {
               padding: 15px; 
               margin: 10px 0; 
               border-radius: 8px; 
-              border-left: 4px solid #38bdf8;
+              border-left: 4px solid #f97316;
               font-size: 14px;
               transition: all 0.2s;
             }
@@ -227,7 +227,7 @@ export async function startWebServer() {
             .intervention-request::before { content: '🚨'; position: absolute; top: 15px; right: 15px; font-size: 20px; }
             .intervention-request h4 { color: #fbbf24; margin: 0 0 10px 0; }
             .btn { 
-              background: linear-gradient(135deg, #38bdf8, #0ea5e9); 
+              background: linear-gradient(135deg, #f97316, #ea580c); 
               color: white; 
               border: none; 
               padding: 10px 20px; 
@@ -238,7 +238,7 @@ export async function startWebServer() {
               margin: 5px;
               transition: all 0.2s;
             }
-            .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3); }
+            .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3); }
             .btn-success { background: linear-gradient(135deg, #10b981, #059669); }
             .btn-success:hover { box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
             .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); }
@@ -248,12 +248,12 @@ export async function startWebServer() {
             .loading { color: #f59e0b; }
             .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
             .tab { padding: 10px 20px; background: #334155; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
-            .tab.active { background: #38bdf8; color: white; }
+            .tab.active { background: #f97316; color: white; }
             .tab-content { display: none; }
             .tab-content.active { display: block; }
             .agent-node { 
               background: #1e293b; 
-              border: 2px solid #38bdf8; 
+              border: 2px solid #f97316; 
               border-radius: 8px; 
               padding: 10px; 
               margin: 10px; 
@@ -268,7 +268,7 @@ export async function startWebServer() {
             }
             .performance-fill { 
               height: 100%; 
-              background: linear-gradient(90deg, #10b981, #38bdf8); 
+              background: linear-gradient(90deg, #10b981, #f97316); 
               transition: width 1s ease;
             }
           </style>
@@ -460,8 +460,8 @@ export async function startWebServer() {
                   datasets: [{
                     label: 'Actions/min',
                     data: [12, 19, 15, 25, 22, 30, 28],
-                    borderColor: '#38bdf8',
-                    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                    borderColor: '#f97316',
+                    backgroundColor: 'rgba(249, 115, 22, 0.1)',
                     tension: 0.4
                   }, {
                     label: 'Success Rate %',
@@ -493,7 +493,7 @@ export async function startWebServer() {
                   datasets: [{
                     label: 'Tests Generated',
                     data: [65, 78, 90, 81, 56, 45, 30],
-                    backgroundColor: '#38bdf8'
+                    backgroundColor: '#f97316'
                   }, {
                     label: 'Bugs Found',
                     data: [12, 19, 15, 25, 22, 15, 8],
@@ -521,7 +521,7 @@ export async function startWebServer() {
                   labels: ['Success', 'Warnings', 'Errors', 'Critical'],
                   datasets: [{
                     data: [75, 15, 8, 2],
-                    backgroundColor: ['#10b981', '#f59e0b', '#ef4444', '#dc2626']
+                    backgroundColor: ['#10b981', '#f97316', '#ef4444', '#dc2626']
                   }]
                 },
                 options: {
@@ -534,51 +534,166 @@ export async function startWebServer() {
               });
             }
 
-            // Initialize Agent Hierarchy
+            // Initialize Agent Hierarchy with React Flow
             function initHierarchy() {
               const container = document.getElementById('hierarchy-container');
               
+              // Create React Flow nodes
               const nodes = [
-                { id: 'main', label: 'Main Agent', shape: 'box', color: '#38bdf8' },
-                { id: 'browser', label: 'Browser Specialist', shape: 'box', color: '#10b981' },
-                { id: 'api', label: 'API Tester', shape: 'box', color: '#f59e0b' },
-                { id: 'auth', label: 'Auth Specialist', shape: 'box', color: '#ef4444' },
-                { id: 'ui', label: 'UI Tester', shape: 'box', color: '#8b5cf6' },
-                { id: 'perf', label: 'Performance Tester', shape: 'box', color: '#06b6d4' },
-                { id: 'security', label: 'Security Scanner', shape: 'box', color: '#f97316' }
+                {
+                  id: 'main',
+                  type: 'default',
+                  position: { x: 400, y: 50 },
+                  data: { label: '🤖 Main Agent' },
+                  style: { 
+                    background: '#f97316', 
+                    color: 'white', 
+                    border: '2px solid #ea580c',
+                    borderRadius: '8px',
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    fontWeight: 'bold'
+                  }
+                },
+                {
+                  id: 'browser',
+                  type: 'default',
+                  position: { x: 150, y: 200 },
+                  data: { label: '🌐 Browser Specialist' },
+                  style: { 
+                    background: '#10b981', 
+                    color: 'white', 
+                    border: '2px solid #059669',
+                    borderRadius: '8px',
+                    padding: '8px 16px',
+                    fontSize: '13px'
+                  }
+                },
+                {
+                  id: 'api',
+                  type: 'default',
+                  position: { x: 400, y: 200 },
+                  data: { label: '🔌 API Tester' },
+                  style: { 
+                    background: '#f59e0b', 
+                    color: 'white', 
+                    border: '2px solid #d97706',
+                    borderRadius: '8px',
+                    padding: '8px 16px',
+                    fontSize: '13px'
+                  }
+                },
+                {
+                  id: 'auth',
+                  type: 'default',
+                  position: { x: 650, y: 200 },
+                  data: { label: '🔐 Auth Specialist' },
+                  style: { 
+                    background: '#ef4444', 
+                    color: 'white', 
+                    border: '2px solid #dc2626',
+                    borderRadius: '8px',
+                    padding: '8px 16px',
+                    fontSize: '13px'
+                  }
+                },
+                {
+                  id: 'ui',
+                  type: 'default',
+                  position: { x: 150, y: 350 },
+                  data: { label: '🎨 UI Tester' },
+                  style: { 
+                    background: '#8b5cf6', 
+                    color: 'white', 
+                    border: '2px solid #7c3aed',
+                    borderRadius: '8px',
+                    padding: '8px 16px',
+                    fontSize: '13px'
+                  }
+                },
+                {
+                  id: 'perf',
+                  type: 'default',
+                  position: { x: 400, y: 350 },
+                  data: { label: '⚡ Performance Tester' },
+                  style: { 
+                    background: '#06b6d4', 
+                    color: 'white', 
+                    border: '2px solid #0891b2',
+                    borderRadius: '8px',
+                    padding: '8px 16px',
+                    fontSize: '13px'
+                  }
+                },
+                {
+                  id: 'security',
+                  type: 'default',
+                  position: { x: 650, y: 350 },
+                  data: { label: '🛡️ Security Scanner' },
+                  style: { 
+                    background: '#f97316', 
+                    color: 'white', 
+                    border: '2px solid #ea580c',
+                    borderRadius: '8px',
+                    padding: '8px 16px',
+                    fontSize: '13px'
+                  }
+                }
               ];
 
               const edges = [
-                { from: 'main', to: 'browser' },
-                { from: 'main', to: 'api' },
-                { from: 'main', to: 'auth' },
-                { from: 'browser', to: 'ui' },
-                { from: 'api', to: 'perf' },
-                { from: 'auth', to: 'security' }
+                { id: 'e1', source: 'main', target: 'browser', animated: true, style: { stroke: '#334155', strokeWidth: 2 } },
+                { id: 'e2', source: 'main', target: 'api', animated: true, style: { stroke: '#334155', strokeWidth: 2 } },
+                { id: 'e3', source: 'main', target: 'auth', animated: true, style: { stroke: '#334155', strokeWidth: 2 } },
+                { id: 'e4', source: 'browser', target: 'ui', animated: true, style: { stroke: '#334155', strokeWidth: 2 } },
+                { id: 'e5', source: 'api', target: 'perf', animated: true, style: { stroke: '#334155', strokeWidth: 2 } },
+                { id: 'e6', source: 'auth', target: 'security', animated: true, style: { stroke: '#334155', strokeWidth: 2 } }
               ];
 
-              const data = { nodes, edges };
-              
-              hierarchyNetwork = new vis.Network(container, data, {
-                nodes: {
-                  font: { color: '#e2e8f0', size: 14 },
-                  borderWidth: 2,
-                  shadow: true
-                },
-                edges: {
-                  color: { color: '#334155' },
-                  width: 2,
-                  shadow: true
-                },
-                physics: {
-                  enabled: true,
-                  stabilization: { iterations: 100 }
-                },
-                interaction: {
-                  hover: true,
-                  tooltipDelay: 200
-                }
-              });
+              // Simple React Flow implementation without React dependency
+              container.innerHTML = \`
+                <svg width="100%" height="100%" style="background: #0f172a; border-radius: 8px;">
+                  <!-- Edges -->
+                  \${edges.map(edge => {
+                    const sourceNode = nodes.find(n => n.id === edge.source);
+                    const targetNode = nodes.find(n => n.id === edge.target);
+                    return \`
+                      <line 
+                        x1="\${sourceNode.position.x + 60}" 
+                        y1="\${sourceNode.position.y + 20}" 
+                        x2="\${targetNode.position.x + 60}" 
+                        y2="\${targetNode.position.y + 20}" 
+                        stroke="\${edge.style.stroke}" 
+                        stroke-width="\${edge.style.strokeWidth}"
+                        stroke-dasharray="5,5"
+                        opacity="0.6">
+                        <animate attributeName="stroke-dashoffset" values="0;10" dur="1s" repeatCount="indefinite"/>
+                      </line>
+                    \`;
+                  }).join('')}
+                  
+                  <!-- Nodes -->
+                  \${nodes.map(node => \`
+                    <g transform="translate(\${node.position.x}, \${node.position.y})">
+                      <rect 
+                        x="0" y="0" width="120" height="40" 
+                        fill="\${node.style.background}" 
+                        stroke="\${node.style.border}" 
+                        stroke-width="\${node.style.border.split(' ')[0].replace('px', '')}"
+                        rx="8" ry="8"
+                        style="filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.3))"/>
+                      <text 
+                        x="60" y="25" 
+                        text-anchor="middle" 
+                        fill="\${node.style.color}" 
+                        font-size="\${node.style.fontSize}" 
+                        font-weight="bold">
+                        \${node.data.label}
+                      </text>
+                    </g>
+                  \`).join('')}
+                </svg>
+              \`;
             }
 
             // Tab switching
@@ -789,7 +904,7 @@ export async function startWebServer() {
                         <strong>\${task.name}</strong>
                         <span class="status \${task.status.replace(' ', '-')}">\${task.status}</span>
                       </div>
-                      \${task.progress ? \`<div style="color: #38bdf8;">\${task.progress}</div>\` : ''}
+                      \${task.progress ? \`<div style="color: #f97316;">\${task.progress}</div>\` : ''}
                     </div>
                     <div class="activity-time">Agent: \${task.agent} | Started: \${new Date(task.started_at).toLocaleTimeString()}</div>
                     \${task.result ? \`<div style="color: #10b981; margin-top: 8px; padding: 8px; background: rgba(16, 185, 129, 0.1); border-radius: 6px;">\${task.result}</div>\` : ''}
