@@ -125,21 +125,15 @@ export class SkillManager {
   }
 
   private loadSkills() {
-    const savedSkills = this.db.getConfig('skills');
-    
-    if (savedSkills) {
-      const parsed = JSON.parse(savedSkills) as Skill[];
-      parsed.forEach(skill => this.skills.set(skill.id, skill));
-    } else {
-      DEFAULT_SKILLS.forEach(skill => {
-        this.createSkill(skill);
-      });
-    }
+    // Load default skills synchronously to avoid async issues
+    DEFAULT_SKILLS.forEach(skill => {
+      this.createSkill(skill);
+    });
   }
 
   private saveSkills() {
-    const skillsArray = Array.from(this.skills.values());
-    this.db.setConfig('skills', JSON.stringify(skillsArray));
+    // Skills are stored in memory only for now
+    // TODO: Implement async persistence when needed
   }
 
   createSkill(data: Omit<Skill, 'id' | 'createdAt' | 'updatedAt'>): Skill {
