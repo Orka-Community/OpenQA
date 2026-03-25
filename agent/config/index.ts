@@ -86,8 +86,8 @@ export class ConfigManager {
     };
   }
 
-  get(key: string): string | null {
-    const dbValue = this.db.getConfig(key);
+  async get(key: string): Promise<string | null> {
+    const dbValue = await this.db.getConfig(key);
     if (dbValue) return dbValue;
 
     const keys = key.split('.');
@@ -98,12 +98,12 @@ export class ConfigManager {
     return value?.toString() || null;
   }
 
-  set(key: string, value: string) {
-    this.db.setConfig(key, value);
+  async set(key: string, value: string) {
+    await this.db.setConfig(key, value);
   }
 
-  getAll(): OpenQAConfig {
-    const dbConfig = this.db.getAllConfig();
+  async getAll(): Promise<OpenQAConfig> {
+    const dbConfig = await this.db.getAllConfig();
     const merged = { ...this.envConfig };
 
     for (const [key, value] of Object.entries(dbConfig)) {
@@ -119,7 +119,12 @@ export class ConfigManager {
     return merged;
   }
 
-  getConfig(): OpenQAConfig {
-    return this.getAll();
+  async getConfig(): Promise<OpenQAConfig> {
+    return await this.getAll();
+  }
+
+  // Synchronous version that only uses env vars (no DB)
+  getConfigSync(): OpenQAConfig {
+    return this.envConfig;
   }
 }

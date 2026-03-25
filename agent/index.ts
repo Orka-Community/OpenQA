@@ -30,12 +30,12 @@ export class OpenQAAgent extends EventEmitter {
   constructor(configPath?: string) {
     super();
     this.config = new ConfigManager(configPath);
-    this.db = new OpenQADatabase(this.config.get('database.path') || undefined);
+    this.db = new OpenQADatabase('./data/openqa.json');
     this.skillManager = new SkillManager(this.db);
   }
 
   private createLLMAdapter() {
-    const cfg = this.config.getConfig();
+    const cfg = this.config.getConfigSync();
     
     switch (cfg.llm.provider) {
       case 'anthropic':
@@ -53,10 +53,10 @@ export class OpenQAAgent extends EventEmitter {
   }
 
   async initialize(triggerType: 'manual' | 'scheduled' | 'merge' | 'pipeline' | 'webhook' = 'manual', triggerData?: any) {
-    const cfg = this.config.getConfig();
+    const cfg = this.config.getConfigSync();
     this.sessionId = `session_${Date.now()}`;
 
-    this.db.createSession(this.sessionId, {
+    await this.db.createSession(this.sessionId, {
       config: cfg,
       started_at: new Date().toISOString(),
       trigger_type: triggerType,
