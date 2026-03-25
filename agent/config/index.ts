@@ -73,7 +73,7 @@ export class ConfigManager {
         autoStart: process.env.AGENT_AUTO_START === 'true'
       },
       web: {
-        port: parseInt(process.env.WEB_PORT || '3000'),
+        port: parseInt(process.env.WEB_PORT || '4242'),
         host: process.env.WEB_HOST || '0.0.0.0'
       },
       database: {
