@@ -55,7 +55,7 @@ program
         
         const agent = new OpenQAAgent();
         const config = new ConfigManager();
-        const cfg = config.getConfig();
+        const cfg = config.getConfigSync();
 
         console.log(chalk.cyan('\n📊 OpenQA Status:'));
         console.log(chalk.white(`  Agent: Running`));
@@ -114,10 +114,6 @@ program
   .command('status')
   .description('Show OpenQA status')
   .action(() => {
-    const config = new ConfigManager();
-    const cfg = config.getConfig();
-    const db = new OpenQADatabase(cfg.database.path);
-
     console.log(chalk.cyan.bold('\n📊 OpenQA Status\n'));
 
     if (existsSync(PID_FILE)) {
@@ -126,48 +122,14 @@ program
         process.kill(parseInt(pid), 0);
         console.log(chalk.green('✓ Agent: Running'));
         console.log(chalk.white(`  PID: ${pid}`));
+        console.log(chalk.yellow('\n📋 Detailed status temporarily disabled'));
       } catch {
-        console.log(chalk.red('✗ Agent: Stopped (stale PID file)'));
+        console.log(chalk.red('✗ Agent: Not running (stale PID file)'));
         unlinkSync(PID_FILE);
       }
     } else {
-      console.log(chalk.red('✗ Agent: Stopped'));
+      console.log(chalk.yellow('✗ Agent: Not running'));
     }
-
-    console.log(chalk.cyan('\n🌐 Web Interfaces:'));
-    console.log(chalk.white(`  DevTools: http://localhost:${cfg.web.port}`));
-    console.log(chalk.white(`  Kanban: http://localhost:${cfg.web.port}/kanban`));
-    console.log(chalk.white(`  Config: http://localhost:${cfg.web.port}/config`));
-
-    console.log(chalk.cyan('\n⚙️  Configuration:'));
-    console.log(chalk.white(`  LLM Provider: ${cfg.llm.provider}`));
-    console.log(chalk.white(`  Target SaaS: ${cfg.saas.url || 'Not configured'}`));
-    console.log(chalk.white(`  GitHub: ${cfg.github?.token ? 'Configured' : 'Not configured'}`));
-    console.log(chalk.white(`  Test Interval: ${cfg.agent.intervalMs / 1000 / 60} minutes`));
-
-    const sessions = db.getRecentSessions(5);
-    console.log(chalk.cyan(`\n📋 Recent Sessions (${sessions.length}):`));
-    sessions.forEach(s => {
-      const status = s.status === 'completed' ? chalk.green('✓') : s.status === 'failed' ? chalk.red('✗') : chalk.yellow('⟳');
-      console.log(chalk.white(`  ${status} ${s.id} - ${s.bugs_found} bugs found`));
-    });
-
-    const bugs = db.getBugsByStatus('open');
-    console.log(chalk.cyan(`\n🐛 Open Bugs: ${bugs.length}`));
-
-    const tickets = db.getKanbanTickets();
-    const byColumn = {
-      backlog: tickets.filter(t => t.column === 'backlog').length,
-      'to-do': tickets.filter(t => t.column === 'to-do').length,
-      'in-progress': tickets.filter(t => t.column === 'in-progress').length,
-      done: tickets.filter(t => t.column === 'done').length
-    };
-    console.log(chalk.cyan('\n📊 Kanban Board:'));
-    console.log(chalk.white(`  Backlog: ${byColumn.backlog}`));
-    console.log(chalk.white(`  To Do: ${byColumn['to-do']}`));
-    console.log(chalk.white(`  In Progress: ${byColumn['in-progress']}`));
-    console.log(chalk.white(`  Done: ${byColumn.done}`));
-    console.log('');
   });
 
 program
@@ -180,7 +142,7 @@ program
     const config = new ConfigManager();
 
     if (!action || action === 'list') {
-      const cfg = config.getConfig();
+      const cfg = config.getConfigSync();
       console.log(chalk.cyan.bold('\n⚙️  OpenQA Configuration\n'));
       console.log(JSON.stringify(cfg, null, 2));
       console.log('');
@@ -219,41 +181,12 @@ program
   .option('-n, --lines <number>', 'Number of lines to show', '50')
   .action((options) => {
     const config = new ConfigManager();
-    const cfg = config.getConfig();
+    const cfg = config.getConfigSync();
     const db = new OpenQADatabase(cfg.database.path);
 
-    const sessions = db.getRecentSessions(1);
-    if (sessions.length === 0) {
-      console.log(chalk.yellow('No sessions found'));
-      return;
-    }
-
-    const session = sessions[0];
-    const actions = db.getSessionActions(session.id);
-
-    console.log(chalk.cyan.bold(`\n📋 Session Logs: ${session.id}\n`));
-    console.log(chalk.white(`Status: ${session.status}`));
-    console.log(chalk.white(`Started: ${session.started_at}`));
-    console.log(chalk.white(`Actions: ${actions.length}\n`));
-
-    const limit = parseInt(options.lines);
-    const displayActions = actions.slice(0, limit);
-
-    displayActions.forEach(action => {
-      const icon = action.type === 'navigate' ? '🌐' : 
-                   action.type === 'click' ? '👆' :
-                   action.type === 'fill' ? '⌨️' :
-                   action.type === 'screenshot' ? '📸' :
-                   action.type === 'github_issue' ? '🐛' :
-                   action.type === 'kanban_ticket' ? '📋' : '•';
-      
-      console.log(chalk.gray(`[${action.timestamp}]`), icon, chalk.white(action.description));
-      if (action.output) {
-        console.log(chalk.gray(`  → ${action.output}`));
-      }
-    });
-
-    console.log('');
+    // TODO: Implement async database calls
+    console.log(chalk.yellow('Logs feature temporarily disabled'));
+    return;
   });
 
 program.parse();
