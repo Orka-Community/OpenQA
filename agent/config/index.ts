@@ -40,11 +40,11 @@ export interface OpenQAConfig {
 }
 
 export class ConfigManager {
-  private db: OpenQADatabase;
+  private db: OpenQADatabase | null = null;
   private envConfig: OpenQAConfig;
 
   constructor(dbPath?: string) {
-    this.db = new OpenQADatabase(dbPath || process.env.DB_PATH || './data/openqa.db');
+    // Don't initialize database in constructor to avoid async issues
     this.envConfig = this.loadFromEnv();
   }
 
@@ -86,8 +86,15 @@ export class ConfigManager {
     };
   }
 
+  private getDB(): OpenQADatabase {
+    if (!this.db) {
+      this.db = new OpenQADatabase('./data/openqa.json');
+    }
+    return this.db;
+  }
+
   async get(key: string): Promise<string | null> {
-    const dbValue = await this.db.getConfig(key);
+    const dbValue = await this.getDB().getConfig(key);
     if (dbValue) return dbValue;
 
     const keys = key.split('.');
@@ -99,11 +106,11 @@ export class ConfigManager {
   }
 
   async set(key: string, value: string) {
-    await this.db.setConfig(key, value);
+    await this.getDB().setConfig(key, value);
   }
 
   async getAll(): Promise<OpenQAConfig> {
-    const dbConfig = await this.db.getAllConfig();
+    const dbConfig = await this.getDB().getAllConfig();
     const merged = { ...this.envConfig };
 
     for (const [key, value] of Object.entries(dbConfig)) {
