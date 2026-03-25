@@ -1,6 +1,6 @@
 {
   "name": "@openqa/cli",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Autonomous QA testing agent powered by Orka.js",
   "type": "module",
   "main": "./dist/cli/index.js",
@@ -62,7 +62,7 @@
     "ws": "^8.16.0"
   },
   "devDependencies": {
-        "@types/express": "^4.17.21",
+    "@types/express": "^4.17.21",
     "@types/node": "^20.10.6",
     "@types/ws": "^8.5.10",
     "tsup": "^8.0.1",
