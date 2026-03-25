@@ -1,5 +1,5 @@
 {
-  "name": "openqa",
+  "name": "open-qa",
   "version": "1.0.1",
   "description": "Autonomous QA testing agent powered by Orka.js",
   "type": "module",
