@@ -57,9 +57,9 @@ program
         
         spinner.succeed(chalk.green('OpenQA started'));
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       spinner.fail(chalk.red('Failed to start OpenQA'));
-      console.error(chalk.red(error.message));
+      console.error(chalk.red(error instanceof Error ? error.message : String(error)));
       process.exit(1);
     }
   });
@@ -90,9 +90,9 @@ program
         unlinkSync(PID_FILE);
         console.log(chalk.yellow('The daemon process was already stopped'));
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       spinner.fail(chalk.red('Failed to stop OpenQA'));
-      console.error(chalk.red(error.message));
+      console.error(chalk.red(error instanceof Error ? error.message : String(error)));
       process.exit(1);
     }
   });

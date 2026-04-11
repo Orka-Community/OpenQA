@@ -1,4 +1,4 @@
-import { OpenQADatabase } from '../../database/index.js';
+import { OpenQADatabase, KanbanTicket } from '../../database/index.js';
 
 export class KanbanTools {
   private db: OpenQADatabase;
@@ -26,20 +26,20 @@ export class KanbanTools {
           },
           required: ['title', 'description', 'priority']
         },
-        execute: async ({ title, description, priority, column = 'to-do', tags = [], screenshot_path }: any) => {
+        execute: async ({ title, description, priority, column = 'to-do', tags = [], screenshot_path }: { title: string; description: string; priority: KanbanTicket['priority']; column?: KanbanTicket['column']; tags?: string[]; screenshot_path?: string }) => {
           try {
             const allTags = ['automated-qa', ...tags];
-            
-            const ticket = this.db.createKanbanTicket({
+
+            const ticket = await this.db.createKanbanTicket({
               title,
               description,
-              priority: priority as any,
-              column: column as any,
+              priority,
+              column,
               tags: JSON.stringify(allTags),
               screenshot_url: screenshot_path
             });
 
-            this.db.createAction({
+            await this.db.createAction({
               session_id: this.sessionId,
               type: 'kanban_ticket',
               description: `Created Kanban ticket: ${title}`,
@@ -48,8 +48,8 @@ export class KanbanTools {
             });
 
             return `✅ Kanban ticket created successfully!\nID: ${ticket.id}\nColumn: ${column}\nPriority: ${priority}`;
-          } catch (error: any) {
-            return `❌ Failed to create Kanban ticket: ${error.message}`;
+          } catch (error: unknown) {
+            return `❌ Failed to create Kanban ticket: ${error instanceof Error ? error.message : String(error)}`;
           }
         }
       },
@@ -65,17 +65,17 @@ export class KanbanTools {
           },
           required: ['ticket_id']
         },
-        execute: async ({ ticket_id, column, priority }: any) => {
+        execute: async ({ ticket_id, column, priority }: { ticket_id: string; column?: KanbanTicket['column']; priority?: KanbanTicket['priority'] }) => {
           try {
-            const updates: any = {};
+            const updates: Partial<KanbanTicket> = {};
             if (column) updates.column = column;
             if (priority) updates.priority = priority;
 
-            this.db.updateKanbanTicket(ticket_id, updates);
+            await this.db.updateKanbanTicket(ticket_id, updates);
 
             return `✅ Kanban ticket ${ticket_id} updated successfully!`;
-          } catch (error: any) {
-            return `❌ Failed to update Kanban ticket: ${error.message}`;
+          } catch (error: unknown) {
+            return `❌ Failed to update Kanban ticket: ${error instanceof Error ? error.message : String(error)}`;
           }
         }
       },
@@ -88,13 +88,13 @@ export class KanbanTools {
         },
         execute: async () => {
           try {
-            const tickets = this.db.getKanbanTickets();
+            const tickets = await this.db.getKanbanTickets();
             
             const byColumn = {
-              backlog: tickets.filter(t => t.column === 'backlog'),
-              'to-do': tickets.filter(t => t.column === 'to-do'),
-              'in-progress': tickets.filter(t => t.column === 'in-progress'),
-              done: tickets.filter(t => t.column === 'done')
+              backlog: tickets.filter((t) => t.column === 'backlog'),
+              'to-do': tickets.filter((t) => t.column === 'to-do'),
+              'in-progress': tickets.filter((t) => t.column === 'in-progress'),
+              done: tickets.filter((t) => t.column === 'done')
             };
 
             const summary = `
@@ -108,8 +108,8 @@ Total: ${tickets.length} tickets
             `.trim();
 
             return summary;
-          } catch (error: any) {
-            return `❌ Failed to get Kanban board: ${error.message}`;
+          } catch (error: unknown) {
+            return `❌ Failed to get Kanban board: ${error instanceof Error ? error.message : String(error)}`;
           }
         }
       }

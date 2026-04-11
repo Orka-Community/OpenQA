@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { OpenQADatabase } from '../database/index.js';
+import { logger } from './logger.js';
 import { ConfigManager } from './config/index.js';
 import { SaaSConfigManager, createQuickConfig } from './config/saas-config.js';
 import { OpenQABrain, SaaSConfig, GeneratedTest, DynamicAgent } from './brain/index.js';
@@ -7,6 +8,8 @@ import { BrowserTools } from './tools/browser.js';
 import { GitHubTools } from './tools/github.js';
 import { KanbanTools } from './tools/kanban.js';
 import { GitListener, GitEvent } from './webhooks/git-listener.js';
+import { ProjectRunner, type ProjectStatus, type TestRunResult } from './tools/project-runner.js';
+import { NotificationService } from './notifications/index.js';
 
 export class OpenQAAgentV2 extends EventEmitter {
   private db: OpenQADatabase;
@@ -15,14 +18,23 @@ export class OpenQAAgentV2 extends EventEmitter {
   private brain: OpenQABrain | null = null;
   private browserTools: BrowserTools | null = null;
   private gitListener: GitListener | null = null;
+  private projectRunner: ProjectRunner;
+  private notifications: NotificationService | null = null;
   private sessionId: string = '';
   private isRunning: boolean = false;
 
   constructor(configPath?: string) {
     super();
     this.config = new ConfigManager(configPath);
-    this.db = new OpenQADatabase(this.config.get('database.path') || undefined);
+    const cfg = this.config.getConfigSync();
+    this.db = new OpenQADatabase(cfg.database?.path || undefined);
     this.saasConfigManager = new SaaSConfigManager(this.db);
+    this.projectRunner = new ProjectRunner();
+
+    // Forward project runner events
+    for (const event of ['install-start', 'install-progress', 'install-complete', 'server-starting', 'server-ready', 'server-stopped', 'test-start', 'test-progress', 'test-complete']) {
+      this.projectRunner.on(event, (data) => this.emit(event, data));
+    }
   }
 
   /**
@@ -96,18 +108,26 @@ export class OpenQAAgentV2 extends EventEmitter {
       throw new Error('SaaS not configured. Call configureSaaS() first.');
     }
 
-    const cfg = this.config.getConfig();
+    const cfg = await this.config.getConfig();
     this.sessionId = `session_${Date.now()}`;
 
-    this.db.createSession(this.sessionId, {
+    await this.db.createSession(this.sessionId, {
       saas: saasConfig,
       started_at: new Date().toISOString()
     });
 
+    // Set up notifications if configured
+    if (cfg.notifications?.slack || cfg.notifications?.discord) {
+      this.notifications = new NotificationService({
+        slack: cfg.notifications.slack,
+        discord: cfg.notifications.discord,
+      });
+    }
+
     this.brain = new OpenQABrain(
       this.db,
-      { 
-        provider: cfg.llm.provider, 
+      {
+        provider: cfg.llm.provider,
         apiKey: cfg.llm.apiKey || process.env.OPENAI_API_KEY || '',
         model: cfg.llm.model
       },
@@ -116,15 +136,17 @@ export class OpenQAAgentV2 extends EventEmitter {
 
     this.browserTools = new BrowserTools(this.db, this.sessionId);
 
+    const log = logger.child({ session: this.sessionId, app: saasConfig.name });
+
     // Forward brain events
     this.brain.on('test-generated', (test: GeneratedTest) => {
       this.emit('test-generated', test);
-      console.log(`🧪 Test generated: ${test.name} (${test.type})`);
+      log.info('Test generated', { name: test.name, type: test.type });
     });
 
     this.brain.on('agent-created', (agent: DynamicAgent) => {
       this.emit('agent-created', agent);
-      console.log(`🤖 Agent created: ${agent.name}`);
+      log.info('Agent created', { name: agent.name });
     });
 
     this.brain.on('test-started', (test: GeneratedTest) => {
@@ -133,27 +155,34 @@ export class OpenQAAgentV2 extends EventEmitter {
 
     this.brain.on('test-completed', (test: GeneratedTest) => {
       this.emit('test-completed', test);
-      const icon = test.status === 'passed' ? '✅' : '❌';
-      console.log(`${icon} Test ${test.status}: ${test.name}`);
+      log.info('Test completed', { name: test.name, status: test.status });
     });
 
-    this.brain.on('thinking', (thought: any) => {
+    this.brain.on('thinking', (thought: Record<string, unknown>) => {
       this.emit('thinking', thought);
     });
 
-    this.brain.on('analysis-complete', (analysis: any) => {
+    this.brain.on('analysis-complete', (analysis: Record<string, unknown>) => {
       this.emit('analysis-complete', analysis);
     });
 
-    this.brain.on('session-complete', (stats: any) => {
+    this.brain.on('session-complete', (stats: Record<string, unknown>) => {
       this.emit('session-complete', stats);
+      if (this.notifications) {
+        this.notifications.notifySessionComplete({
+          sessionId: this.sessionId,
+          testsGenerated: Number(stats.testsGenerated ?? 0),
+          agentsCreated: Number(stats.agentsCreated ?? 0),
+        }).catch((e) => log.error('Notification failed', { error: e instanceof Error ? e.message : String(e) }));
+      }
     });
 
-    console.log(`✅ OpenQA initialized for: ${saasConfig.name}`);
-    console.log(`📍 URL: ${saasConfig.url}`);
-    if (saasConfig.repoUrl) console.log(`📦 Repo: ${saasConfig.repoUrl}`);
-    if (saasConfig.localPath) console.log(`📁 Local: ${saasConfig.localPath}`);
-    console.log(`📋 Directives: ${saasConfig.directives?.length || 0}`);
+    log.info('OpenQA initialized', {
+      url: saasConfig.url,
+      repoUrl: saasConfig.repoUrl,
+      localPath: saasConfig.localPath,
+      directives: saasConfig.directives?.length ?? 0,
+    });
   }
 
   /**
@@ -166,7 +195,7 @@ export class OpenQAAgentV2 extends EventEmitter {
     }
 
     this.isRunning = true;
-    console.log(`\n🧠 Starting autonomous QA session...`);
+    logger.info('Starting autonomous QA session', { session: this.sessionId });
     
     await this.brain!.runAutonomously(maxIterations);
     
@@ -221,7 +250,7 @@ export class OpenQAAgentV2 extends EventEmitter {
    * Start listening for Git events (merges, pipelines)
    */
   async startGitListener() {
-    const cfg = this.config.getConfig();
+    const cfg = await this.config.getConfig();
     const saasConfig = this.saasConfigManager.getConfig();
 
     if (cfg.github?.token && cfg.github?.owner && cfg.github?.repo) {
@@ -235,7 +264,7 @@ export class OpenQAAgentV2 extends EventEmitter {
       });
 
       this.gitListener.on('merge', async (event: GitEvent) => {
-        console.log(`🔀 Merge detected on ${event.branch}!`);
+        logger.info('Merge detected', { branch: event.branch });
         this.emit('git-merge', event);
         
         // Run autonomous session on merge
@@ -243,7 +272,7 @@ export class OpenQAAgentV2 extends EventEmitter {
       });
 
       this.gitListener.on('pipeline-success', async (event: GitEvent) => {
-        console.log(`✅ Pipeline success!`);
+        logger.info('Pipeline success');
         this.emit('git-pipeline-success', event);
         
         // Run autonomous session on successful deploy
@@ -251,8 +280,40 @@ export class OpenQAAgentV2 extends EventEmitter {
       });
 
       await this.gitListener.start();
-      console.log(`🔗 Git listener started`);
+      logger.info('Git listener started');
     }
+  }
+
+  /**
+   * Setup a project: detect, install deps, optionally start dev server
+   */
+  async setupProject(repoPath: string, options?: { startServer?: boolean }): Promise<ProjectStatus> {
+    const projectType = this.projectRunner.detectProjectType(repoPath);
+    logger.info('Project detected', { language: projectType.language, framework: projectType.framework, packageManager: projectType.packageManager });
+
+    await this.projectRunner.installDependencies(repoPath);
+    logger.info('Dependencies installed');
+
+    if (options?.startServer && projectType.devCommand) {
+      const { url } = await this.projectRunner.startDevServer(repoPath);
+      logger.info('Dev server ready', { url });
+    }
+
+    return this.projectRunner.getStatus();
+  }
+
+  /**
+   * Run the project's existing test suite
+   */
+  async runProjectTests(repoPath: string): Promise<TestRunResult> {
+    return this.projectRunner.runExistingTests(repoPath);
+  }
+
+  /**
+   * Get project runner status
+   */
+  getProjectStatus(): ProjectStatus {
+    return this.projectRunner.getStatus();
   }
 
   /**
@@ -260,7 +321,7 @@ export class OpenQAAgentV2 extends EventEmitter {
    */
   stop() {
     this.isRunning = false;
-    
+
     if (this.gitListener) {
       this.gitListener.stop();
       this.gitListener = null;
@@ -270,7 +331,9 @@ export class OpenQAAgentV2 extends EventEmitter {
       this.browserTools.close();
     }
 
-    console.log('🛑 OpenQA stopped');
+    this.projectRunner.cleanup();
+
+    logger.info('OpenQA stopped');
   }
 
   /**
@@ -317,3 +380,4 @@ export class OpenQAAgentV2 extends EventEmitter {
 
 // Export for easy usage
 export { SaaSConfig, GeneratedTest, DynamicAgent };
+export type { ProjectStatus, TestRunResult };

@@ -1,0 +1,79 @@
+name: Publish
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    permissions:
+      contents: write  # needed to push version bump commits & tags
+      id-token: write  # needed for npm provenance
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # full history needed to compare against tags
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      # ── npm publish ──────────────────────────────────────────────────────────
+      # 1. Auto-génère un patch changeset si des fichiers ont changé depuis le
+      #    dernier tag git (skip si un changeset manuel existe déjà).
+      # 2. Applique les bumps de version (npx changeset version).
+      # 3. Commit les package.json mis à jour + [skip ci] pour éviter la boucle.
+      # 4. Publie sur npm, pousse commits + tags.
+      - name: Auto-version & Publish to npm
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Auto-détecter les changements et créer un patch changeset si nécessaire
+          node scripts/auto-changeset.mjs
+
+          # Compter les changesets en attente
+          CS=$(find .changeset -maxdepth 1 -name "*.md" ! -name "README.md" | wc -l | tr -d ' ')
+          echo "Changesets en attente : $CS"
+
+          if [ "$CS" -gt 0 ]; then
+            # Appliquer les bumps de version et générer le CHANGELOG
+            npx changeset version
+
+            # Committer les mises à jour de version ([skip ci] évite la boucle de workflow)
+            git add .
+            git diff --staged --quiet || git commit -m "chore: release @openqa/cli [skip ci]"
+
+            # Publier sur npm
+            npm publish --access public
+
+            # Pousser le commit de version + les tags de release
+            git push --follow-tags origin HEAD:main
+          else
+            echo "Aucun changement détecté — publication ignorée."
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

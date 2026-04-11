@@ -19,6 +19,8 @@
     "dev": "tsx watch agent/index.ts",
     "build": "tsup",
     "start": "node dist/cli/index.js start",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prepublishOnly": "npm run build",
     "web:dev": "cd web && npm run dev",
     "web:build": "cd web && npm run build"
@@ -52,21 +54,32 @@
     "@orka-js/memory-store": "^1.0.0",
     "@orka-js/observability": "^1.0.0",
     "@orka-js/openai": "^1.0.0",
-    "lowdb": "^6.1.0",
+    "better-sqlite3": "^12.8.0",
     "chalk": "^5.3.0",
     "commander": "^11.1.0",
+    "cors": "^2.8.6",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "express-rate-limit": "^8.3.2",
+    "lowdb": "^6.1.0",
     "ora": "^8.0.1",
-    "playwright": "^1.40.0",
-    "ws": "^8.16.0"
+    "playwright": "^1.48.0",
+    "ws": "^8.16.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cookie": "^0.6.0",
+    "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/node": "^20.10.6",
+    "@types/supertest": "^7.2.0",
     "@types/ws": "^8.5.10",
+    "supertest": "^7.2.2",
     "tsup": "^8.0.1",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^2.1.9"
   }
 }

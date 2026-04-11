@@ -53,8 +53,8 @@ export class BrowserTools {
             });
             
             return `Successfully navigated to ${url}. Page title: "${title}"`;
-          } catch (error: any) {
-            return `Failed to navigate: ${error.message}`;
+          } catch (error: unknown) {
+            return `Failed to navigate: ${error instanceof Error ? error.message : String(error)}`;
           }
         }
       },
@@ -82,8 +82,8 @@ export class BrowserTools {
             });
             
             return `Successfully clicked element: ${selector}`;
-          } catch (error: any) {
-            return `Failed to click element: ${error.message}`;
+          } catch (error: unknown) {
+            return `Failed to click element: ${error instanceof Error ? error.message : String(error)}`;
           }
         }
       },
@@ -112,8 +112,8 @@ export class BrowserTools {
             });
             
             return `Successfully filled input ${selector} with text`;
-          } catch (error: any) {
-            return `Failed to fill input: ${error.message}`;
+          } catch (error: unknown) {
+            return `Failed to fill input: ${error instanceof Error ? error.message : String(error)}`;
           }
         }
       },
@@ -143,8 +143,8 @@ export class BrowserTools {
             });
             
             return `Screenshot saved: ${path}`;
-          } catch (error: any) {
-            return `Failed to take screenshot: ${error.message}`;
+          } catch (error: unknown) {
+            return `Failed to take screenshot: ${error instanceof Error ? error.message : String(error)}`;
           }
         }
       },
@@ -161,8 +161,8 @@ export class BrowserTools {
           try {
             const content = await this.page.textContent('body');
             return content?.slice(0, 1000) || 'No content found';
-          } catch (error: any) {
-            return `Failed to get content: ${error.message}`;
+          } catch (error: unknown) {
+            return `Failed to get content: ${error instanceof Error ? error.message : String(error)}`;
           }
         }
       },

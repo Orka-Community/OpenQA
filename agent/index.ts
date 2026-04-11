@@ -52,15 +52,13 @@ export class OpenQAAgent extends EventEmitter {
     }
   }
 
-  async initialize(triggerType: 'manual' | 'scheduled' | 'merge' | 'pipeline' | 'webhook' = 'manual', triggerData?: any) {
+  async initialize(triggerType: 'manual' | 'scheduled' | 'merge' | 'pipeline' | 'webhook' = 'manual', triggerData?: Record<string, unknown>) {
     const cfg = this.config.getConfigSync();
     this.sessionId = `session_${Date.now()}`;
 
     await this.db.createSession(this.sessionId, {
       config: cfg,
-      started_at: new Date().toISOString(),
-      trigger_type: triggerType,
-      trigger_data: triggerData ? JSON.stringify(triggerData) : null
+      started_at: new Date().toISOString()
     });
 
     this.browserTools = new BrowserTools(this.db, this.sessionId);
@@ -118,7 +116,11 @@ ${skillPrompt}
 Always provide clear, actionable information with steps to reproduce. Think step by step like a human QA expert.`
     };
 
-    this.agent = new ReActAgent(agentConfig, llm, memory);
+    this.agent = new ReActAgent({
+      tools: allTools,
+      maxIterations: cfg.agent.maxIterations,
+      systemPrompt: agentConfig.systemPrompt
+    }, llm, memory);
 
     // Initialize specialist manager
     this.specialistManager = new SpecialistAgentManager(
@@ -131,8 +133,8 @@ Always provide clear, actionable information with steps to reproduce. Think step
     // Forward specialist events
     this.specialistManager.on('agent-created', (status: AgentStatus) => this.emit('specialist-created', status));
     this.specialistManager.on('agent-started', (status: AgentStatus) => this.emit('specialist-started', status));
-    this.specialistManager.on('agent-completed', (data: any) => this.emit('specialist-completed', data));
-    this.specialistManager.on('agent-failed', (data: any) => this.emit('specialist-failed', data));
+    this.specialistManager.on('agent-completed', (data: AgentStatus & { result?: string }) => this.emit('specialist-completed', data));
+    this.specialistManager.on('agent-failed', (data: AgentStatus & { error?: string }) => this.emit('specialist-failed', data));
 
     console.log(`✅ OpenQA Agent initialized (Session: ${this.sessionId})`);
   }
@@ -142,7 +144,7 @@ Always provide clear, actionable information with steps to reproduce. Think step
       await this.initialize();
     }
 
-    const cfg = this.config.getConfig();
+    const cfg = await this.config.getConfig();
     console.log(`🚀 Starting test session for ${cfg.saas.url}`);
 
     try {
@@ -150,17 +152,17 @@ Always provide clear, actionable information with steps to reproduce. Think step
         `Continue testing the application at ${cfg.saas.url}. Review previous findings, create new test scenarios, and report any issues discovered. Focus on areas not yet tested.`
       );
 
-      this.db.updateSession(this.sessionId, {
+      await this.db.updateSession(this.sessionId, {
         status: 'completed',
         ended_at: new Date().toISOString()
       });
 
       console.log('✅ Test session completed:', result);
       return result;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Session error:', error);
-      
-      this.db.updateSession(this.sessionId, {
+
+      await this.db.updateSession(this.sessionId, {
         status: 'failed',
         ended_at: new Date().toISOString()
       });
@@ -180,7 +182,7 @@ Always provide clear, actionable information with steps to reproduce. Think step
     }
 
     this.isRunning = true;
-    const cfg = this.config.getConfig();
+    const cfg = await this.config.getConfig();
     
     console.log(`🤖 OpenQA Agent starting in autonomous mode`);
     console.log(`📍 Target: ${cfg.saas.url}`);
@@ -235,7 +237,7 @@ Always provide clear, actionable information with steps to reproduce. Think step
 
   // Git integration
   private async startGitListener() {
-    const cfg = this.config.getConfig();
+    const cfg = await this.config.getConfig();
     
     // Try GitHub first
     if (cfg.github?.token && cfg.github?.owner && cfg.github?.repo) {
@@ -297,7 +299,7 @@ Always provide clear, actionable information with steps to reproduce. Think step
     if (!this.specialistManager) {
       await this.initialize();
     }
-    const cfg = this.config.getConfig();
+    const cfg = await this.config.getConfig();
     await this.specialistManager!.runSecuritySuite(cfg.saas.url);
   }
 
@@ -305,7 +307,7 @@ Always provide clear, actionable information with steps to reproduce. Think step
     if (!this.specialistManager) {
       await this.initialize();
     }
-    const cfg = this.config.getConfig();
+    const cfg = await this.config.getConfig();
     const agentId = this.specialistManager!.createSpecialist(type);
     await this.specialistManager!.runSpecialist(agentId, cfg.saas.url);
   }
@@ -335,11 +337,11 @@ Always provide clear, actionable information with steps to reproduce. Think step
     return this.skillManager.toggleSkill(id);
   }
 
-  getStatus() {
+  async getStatus() {
     return {
       isRunning: this.isRunning,
       sessionId: this.sessionId,
-      config: this.config.getConfig(),
+      config: await this.config.getConfig(),
       gitListenerActive: !!this.gitListener,
       specialists: this.getSpecialistStatuses(),
       skills: this.skillManager.getEnabledSkills().length

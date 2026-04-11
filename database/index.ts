@@ -4,6 +4,19 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { mkdirSync, writeFileSync, readFileSync } from 'fs';
 
+export { OpenQASQLiteDatabase } from './sqlite.js';
+
+/**
+ * Factory — chooses SQLite for .db paths, LowDB for .json paths.
+ */
+export async function createDatabase(path: string): Promise<OpenQADatabase> {
+  if (path.endsWith('.db')) {
+    const { OpenQASQLiteDatabase } = await import('./sqlite.js');
+    return new OpenQASQLiteDatabase(path) as unknown as OpenQADatabase;
+  }
+  return new OpenQADatabase(path);
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -54,12 +67,22 @@ export interface KanbanTicket {
   updated_at: string;
 }
 
+export interface User {
+  id: string;
+  username: string;
+  passwordHash: string;
+  role: 'admin' | 'viewer';
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface DatabaseSchema {
   config: Record<string, string>;
   test_sessions: TestSession[];
   actions: Action[];
   bugs: Bug[];
   kanban_tickets: KanbanTicket[];
+  users: User[];
 }
 
 export class OpenQADatabase {
@@ -79,7 +102,8 @@ export class OpenQADatabase {
       test_sessions: [],
       actions: [],
       bugs: [],
-      kanban_tickets: []
+      kanban_tickets: [],
+      users: [],
     });
 
     this.db.read();
@@ -89,7 +113,8 @@ export class OpenQADatabase {
         test_sessions: [],
         actions: [],
         bugs: [],
-        kanban_tickets: []
+        kanban_tickets: [],
+        users: [],
       };
       this.db.write();
     }
@@ -100,6 +125,10 @@ export class OpenQADatabase {
       this.initialize();
     }
     await this.db!.read();
+    // Auto-migrate: add any missing top-level arrays added in later versions
+    let migrated = false;
+    if (!this.db!.data.users) { this.db!.data.users = []; migrated = true; }
+    if (migrated) await this.db!.write();
   }
 
   async getConfig(key: string): Promise<string | null> {
@@ -118,7 +147,7 @@ export class OpenQADatabase {
     return this.db!.data.config;
   }
 
-  async createSession(id: string, metadata?: any): Promise<TestSession> {
+  async createSession(id: string, metadata?: Record<string, unknown>): Promise<TestSession> {
     await this.ensureInitialized();
     const session: TestSession = {
       id,
@@ -249,32 +278,87 @@ export class OpenQADatabase {
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }
 
+  async deleteKanbanTicket(id: string): Promise<void> {
+    await this.ensureInitialized();
+    const index = this.db!.data.kanban_tickets.findIndex(t => t.id === id);
+    if (index !== -1) {
+      this.db!.data.kanban_tickets.splice(index, 1);
+      await this.db!.write();
+    }
+  }
+
   async clearAllConfig() {
     await this.ensureInitialized();
     this.db!.data.config = {};
     await this.db!.write();
   }
 
-  // Get real data methods
+  // Get real data methods - connected to actual database records
 
   async getActiveAgents() {
     await this.ensureInitialized();
-    // For now, return mock agents based on sessions
     const sessions = await this.getRecentSessions(1);
     const currentSession = sessions[0];
     
-    if (!currentSession) {
-      return [{ name: 'Main Agent', status: 'idle', purpose: 'Autonomous testing', performance: 0, tasks: 0 }];
-    }
-
-    return [
-      { name: 'Main Agent', status: 'running', purpose: 'Autonomous testing', performance: 85, tasks: currentSession.total_actions || 0 },
-      { name: 'Browser Specialist', status: 'running', purpose: 'UI testing', performance: 92, tasks: Math.floor((currentSession.total_actions || 0) * 0.3) },
-      { name: 'API Tester', status: 'running', purpose: 'API testing', performance: 78, tasks: Math.floor((currentSession.total_actions || 0) * 0.2) },
-      { name: 'Auth Specialist', status: 'idle', purpose: 'Authentication testing', performance: 95, tasks: Math.floor((currentSession.total_actions || 0) * 0.1) },
-      { name: 'UI Tester', status: 'running', purpose: 'User interface testing', performance: 88, tasks: Math.floor((currentSession.total_actions || 0) * 0.25) },
-      { name: 'Security Scanner', status: 'idle', purpose: 'Security testing', performance: 91, tasks: Math.floor((currentSession.total_actions || 0) * 0.15) }
+    // Return real agent state based on session status
+    const isRunning = currentSession?.status === 'running';
+    const totalActions = currentSession?.total_actions || 0;
+    
+    // Main agent is always present
+    const agents = [
+      { 
+        name: 'Main Agent', 
+        status: isRunning ? 'running' : 'idle', 
+        purpose: 'Autonomous QA orchestration', 
+        performance: totalActions > 0 ? Math.min(100, Math.round((totalActions / 100) * 100)) : 0, 
+        tasks: totalActions 
+      }
     ];
+    
+    // Add dynamic agents based on actual session activity
+    if (currentSession && totalActions > 0) {
+      const actions = await this.getSessionActions(currentSession.id);
+      
+      // Group actions by type to determine which specialists are active
+      const actionTypes = actions.reduce((acc: Record<string, number>, action) => {
+        const type = action.type || 'unknown';
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {});
+      
+      // Add specialists based on actual action types
+      if (actionTypes['navigate'] || actionTypes['click'] || actionTypes['screenshot']) {
+        agents.push({
+          name: 'Browser Specialist',
+          status: isRunning ? 'running' : 'idle',
+          purpose: 'UI navigation and interaction',
+          performance: Math.round(((actionTypes['navigate'] || 0) + (actionTypes['click'] || 0)) / totalActions * 100),
+          tasks: (actionTypes['navigate'] || 0) + (actionTypes['click'] || 0)
+        });
+      }
+      
+      if (actionTypes['api_call'] || actionTypes['request']) {
+        agents.push({
+          name: 'API Tester',
+          status: isRunning ? 'running' : 'idle',
+          purpose: 'API endpoint testing',
+          performance: Math.round((actionTypes['api_call'] || actionTypes['request'] || 0) / totalActions * 100),
+          tasks: actionTypes['api_call'] || actionTypes['request'] || 0
+        });
+      }
+      
+      if (actionTypes['auth'] || actionTypes['login']) {
+        agents.push({
+          name: 'Auth Specialist',
+          status: isRunning ? 'running' : 'idle',
+          purpose: 'Authentication testing',
+          performance: Math.round((actionTypes['auth'] || actionTypes['login'] || 0) / totalActions * 100),
+          tasks: actionTypes['auth'] || actionTypes['login'] || 0
+        });
+      }
+    }
+    
+    return agents;
   }
 
   async getCurrentTasks() {
@@ -282,64 +366,130 @@ export class OpenQADatabase {
     const sessions = await this.getRecentSessions(1);
     const currentSession = sessions[0];
     
-    if (!currentSession || currentSession.status === 'completed') {
-      return [];
-    }
-
-    // Generate realistic tasks based on session data
-    const tasks = [];
-    const taskTypes = ['Scan Application', 'Test Authentication', 'Generate Tests', 'Analyze Results', 'Create Reports'];
-    
-    for (let i = 0; i < Math.min(5, Math.floor((currentSession.total_actions || 0) / 10)); i++) {
-      const taskType = taskTypes[i % taskTypes.length];
-      const status = i === 0 ? 'running' : i === 1 ? 'pending' : 'completed';
-      const progress = status === 'completed' ? '100%' : status === 'running' ? '65%' : '0%';
-      
-      tasks.push({
-        id: `task_${i + 1}`,
-        name: taskType,
-        status: status,
-        progress: progress,
-        agent: ['Main Agent', 'Browser Specialist', 'API Tester', 'UI Tester'][i % 4],
-        started_at: new Date(Date.now() - (i * 10 * 60 * 1000)).toISOString(),
-        result: status === 'completed' ? 'Successfully completed task execution' : null
-      });
-    }
-    
-    return tasks;
-  }
-
-  async getCurrentIssues() {
-    await this.ensureInitialized();
-    const sessions = await this.getRecentSessions(1);
-    const currentSession = sessions[0];
-    
     if (!currentSession) {
       return [];
     }
 
-    // Generate realistic issues based on bugs found
-    const issues = [];
-    const bugCount = currentSession.bugs_found || 0;
+    // Get real actions from the session
+    const actions = await this.getSessionActions(currentSession.id);
     
-    if (bugCount > 0) {
-      const issueTypes = ['Critical Security Issue', 'Performance Bottleneck', 'UI Bug', 'API Error', 'Authentication Flaw'];
-      const severities = ['critical', 'high', 'medium', 'low'];
-      
-      for (let i = 0; i < Math.min(bugCount, 5); i++) {
-        issues.push({
-          id: `issue_${i + 1}`,
-          title: issueTypes[i % issueTypes.length],
-          description: `Issue detected during automated testing session`,
-          severity: severities[i % severities.length],
-          status: 'open',
-          discovered_at: new Date(Date.now() - (i * 30 * 60 * 1000)).toISOString(),
-          agent: ['Main Agent', 'Browser Specialist', 'API Tester'][i % 3]
-        });
-      }
+    // Convert recent actions to tasks
+    const recentActions = actions.slice(-10).reverse();
+    
+    return recentActions.map((action, index) => ({
+      id: action.id,
+      name: action.type || 'Unknown Action',
+      status: index === 0 && currentSession.status === 'running' ? 'running' : 'completed',
+      progress: index === 0 && currentSession.status === 'running' ? '65%' : '100%',
+      agent: 'Main Agent',
+      started_at: action.timestamp,
+      result: action.output || action.description || 'Completed'
+    }));
+  }
+
+  async getCurrentIssues() {
+    await this.ensureInitialized();
+    
+    // Get real bugs from the database
+    const bugs = await this.getAllBugs();
+    
+    // Return actual bugs as issues
+    return bugs.slice(0, 10).map(bug => ({
+      id: bug.id,
+      title: bug.title,
+      description: bug.description,
+      severity: bug.severity || 'medium',
+      status: bug.status || 'open',
+      discovered_at: bug.created_at,
+      agent: 'Main Agent'
+    }));
+  }
+
+  async pruneOldSessions(maxAgeDays: number): Promise<{ sessionsRemoved: number; actionsRemoved: number }> {
+    await this.ensureInitialized();
+    const cutoff = new Date(Date.now() - maxAgeDays * 86400000).toISOString();
+
+    const oldSessions = this.db!.data.test_sessions.filter(s => s.started_at < cutoff);
+    const oldSessionIds = new Set(oldSessions.map(s => s.id));
+
+    const actionsBefore = this.db!.data.actions.length;
+    this.db!.data.actions = this.db!.data.actions.filter(a => !oldSessionIds.has(a.session_id));
+    const actionsRemoved = actionsBefore - this.db!.data.actions.length;
+
+    this.db!.data.test_sessions = this.db!.data.test_sessions.filter(s => s.started_at >= cutoff);
+    await this.db!.write();
+
+    return { sessionsRemoved: oldSessions.length, actionsRemoved };
+  }
+
+  async getStorageStats(): Promise<{ sessions: number; actions: number; bugs: number; tickets: number }> {
+    await this.ensureInitialized();
+    return {
+      sessions: this.db!.data.test_sessions.length,
+      actions: this.db!.data.actions.length,
+      bugs: this.db!.data.bugs.length,
+      tickets: this.db!.data.kanban_tickets.length,
+    };
+  }
+
+  // ── User management ──────────────────────────────────────────────────────────
+
+  async countUsers(): Promise<number> {
+    await this.ensureInitialized();
+    return this.db!.data.users.length;
+  }
+
+  async findUserByUsername(username: string): Promise<User | null> {
+    await this.ensureInitialized();
+    return this.db!.data.users.find(u => u.username === username) ?? null;
+  }
+
+  async getUserById(id: string): Promise<User | null> {
+    await this.ensureInitialized();
+    return this.db!.data.users.find(u => u.id === id) ?? null;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    await this.ensureInitialized();
+    return [...this.db!.data.users];
+  }
+
+  async createUser(data: { username: string; passwordHash: string; role: User['role'] }): Promise<User> {
+    await this.ensureInitialized();
+    const now = new Date().toISOString();
+    const user: User = {
+      id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      username: data.username,
+      passwordHash: data.passwordHash,
+      role: data.role,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.db!.data.users.push(user);
+    await this.db!.write();
+    return user;
+  }
+
+  async updateUser(id: string, updates: Partial<Pick<User, 'passwordHash' | 'role'>>): Promise<void> {
+    await this.ensureInitialized();
+    const idx = this.db!.data.users.findIndex(u => u.id === id);
+    if (idx !== -1) {
+      this.db!.data.users[idx] = {
+        ...this.db!.data.users[idx],
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      await this.db!.write();
     }
-    
-    return issues;
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    await this.ensureInitialized();
+    const idx = this.db!.data.users.findIndex(u => u.id === id);
+    if (idx !== -1) {
+      this.db!.data.users.splice(idx, 1);
+      await this.db!.write();
+    }
   }
 
   async close() {

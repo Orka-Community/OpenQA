@@ -2,6 +2,8 @@ import { SaaSConfig } from '../brain/index.js';
 import { OpenQADatabase } from '../../database/index.js';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { validateSaaSAppConfigSafe } from './schema.js';
+import { ConfigError } from '../errors.js';
 
 export class SaaSConfigManager {
   private db: OpenQADatabase;
@@ -23,6 +25,11 @@ export class SaaSConfigManager {
   }
 
   configure(config: SaaSConfig): SaaSConfig {
+    const result = validateSaaSAppConfigSafe(config);
+    if (!result.success) {
+      throw new ConfigError('Invalid SaaS configuration: ' + result.errors.join(', '));
+    }
+
     this.config = {
       ...config,
       techStack: config.techStack || this.detectTechStack(config.localPath),

@@ -5,7 +5,7 @@
 <h1 align="center">OpenQA</h1>
 
 <p align="center">
-  <strong>Autonomous QA Testing Agent - Thinks, codes, and executes tests like a senior QA engineer. Powered by Orka.js 🦦</strong>
+  <strong>Autonomous QA Testing Agent - Thinks, codes, and executes tests like a senior QA engineer. Powered by Orka Team</strong>
 </p>
 
 <p align="center">

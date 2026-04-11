@@ -1,43 +1,11 @@
 import { config as dotenvConfig } from 'dotenv';
 import { OpenQADatabase } from '../../database/index.js';
+import { validateConfigSafe, type ValidatedOpenQAConfig } from './schema.js';
+import { logger } from '../logger.js';
 
 dotenvConfig();
 
-export interface OpenQAConfig {
-  llm: {
-    provider: 'openai' | 'anthropic' | 'ollama';
-    apiKey?: string;
-    model?: string;
-    baseUrl?: string;
-  };
-  saas: {
-    url: string;
-    authType: 'none' | 'basic' | 'bearer' | 'session';
-    username?: string;
-    password?: string;
-  };
-  github?: {
-    token: string;
-    owner: string;
-    repo: string;
-  };
-  agent: {
-    intervalMs: number;
-    maxIterations: number;
-    autoStart: boolean;
-  };
-  web: {
-    port: number;
-    host: string;
-  };
-  database: {
-    path: string;
-  };
-  notifications?: {
-    slack?: string;
-    discord?: string;
-  };
-}
+export type OpenQAConfig = ValidatedOpenQAConfig;
 
 export class ConfigManager {
   private db: OpenQADatabase | null = null;
@@ -49,16 +17,16 @@ export class ConfigManager {
   }
 
   private loadFromEnv(): OpenQAConfig {
-    return {
+    const raw = {
       llm: {
-        provider: (process.env.LLM_PROVIDER as any) || 'openai',
+        provider: process.env.LLM_PROVIDER || 'openai',
         apiKey: process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY,
         model: process.env.LLM_MODEL,
         baseUrl: process.env.OLLAMA_BASE_URL
       },
       saas: {
         url: process.env.SAAS_URL || '',
-        authType: (process.env.SAAS_AUTH_TYPE as any) || 'none',
+        authType: process.env.SAAS_AUTH_TYPE || 'none',
         username: process.env.SAAS_USERNAME,
         password: process.env.SAAS_PASSWORD
       },
@@ -84,6 +52,14 @@ export class ConfigManager {
         discord: process.env.DISCORD_WEBHOOK_URL
       }
     };
+
+    const result = validateConfigSafe(raw);
+    if (!result.success) {
+      logger.warn('Config validation warnings', { errors: result.errors });
+      // Return raw config with type assertion — Zod defaults won't apply but app can still start
+      return raw as OpenQAConfig;
+    }
+    return result.data;
   }
 
   private getDB(): OpenQADatabase {
@@ -98,11 +74,15 @@ export class ConfigManager {
     if (dbValue) return dbValue;
 
     const keys = key.split('.');
-    let value: any = this.envConfig;
+    let value: unknown = this.envConfig;
     for (const k of keys) {
-      value = value?.[k];
+      if (value && typeof value === 'object') {
+        value = (value as Record<string, unknown>)[k];
+      } else {
+        return null;
+      }
     }
-    return value?.toString() || null;
+    return value != null ? String(value) : null;
   }
 
   async set(key: string, value: string) {
@@ -115,10 +95,10 @@ export class ConfigManager {
 
     for (const [key, value] of Object.entries(dbConfig)) {
       const keys = key.split('.');
-      let obj: any = merged;
+      let obj: Record<string, unknown> = merged as unknown as Record<string, unknown>;
       for (let i = 0; i < keys.length - 1; i++) {
-        if (!obj[keys[i]]) obj[keys[i]] = {};
-        obj = obj[keys[i]];
+        if (!obj[keys[i]] || typeof obj[keys[i]] !== 'object') obj[keys[i]] = {};
+        obj = obj[keys[i]] as Record<string, unknown>;
       }
       obj[keys[keys.length - 1]] = value;
     }

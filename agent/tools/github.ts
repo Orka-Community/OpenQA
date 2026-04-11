@@ -33,7 +33,7 @@ export class GitHubTools {
           },
           required: ['title', 'body', 'severity']
         },
-        execute: async ({ title, body, severity, labels = [], screenshot_path }: any) => {
+        execute: async ({ title, body, severity, labels = [], screenshot_path }: { title: string; body: string; severity: 'low' | 'medium' | 'high' | 'critical'; labels?: string[]; screenshot_path?: string }) => {
           if (!this.octokit || !this.config.owner || !this.config.repo) {
             return 'GitHub not configured. Please set GITHUB_TOKEN, GITHUB_OWNER, and GITHUB_REPO.';
           }
@@ -75,15 +75,15 @@ ${screenshot_path ? `**Screenshot:** ${screenshot_path}` : ''}
               session_id: this.sessionId,
               title,
               description: body,
-              severity: severity as any,
+              severity,
               status: 'open',
               github_issue_url: issue.data.html_url,
               screenshot_path
             });
 
             return `✅ GitHub issue created successfully!\nURL: ${issue.data.html_url}\nIssue #${issue.data.number}`;
-          } catch (error: any) {
-            return `❌ Failed to create GitHub issue: ${error.message}`;
+          } catch (error: unknown) {
+            return `❌ Failed to create GitHub issue: ${error instanceof Error ? error.message : String(error)}`;
           }
         }
       }

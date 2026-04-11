@@ -174,8 +174,8 @@ export class SpecialistAgentManager extends EventEmitter {
     
     const systemPrompt = customPrompt || SPECIALIST_PROMPTS[type];
     
+    const llm = this.createLLMAdapter();
     const agent = new ReActAgent({
-      llm: this.createLLMAdapter(),
       tools: this.browserTools.getTools(),
       maxIterations: 15,
       systemPrompt: `${systemPrompt}
@@ -186,7 +186,7 @@ IMPORTANT RULES:
 - Create GitHub issues for critical/high severity bugs
 - Be thorough but efficient
 - Stop when you've tested the main scenarios for your specialty`
-    });
+    }, llm);
 
     this.agents.set(agentId, agent);
     
@@ -229,11 +229,11 @@ IMPORTANT RULES:
       
       this.emit('agent-completed', { ...status, result });
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       status.status = 'failed';
       status.completedAt = new Date();
-      
-      this.emit('agent-failed', { ...status, error: error.message });
+
+      this.emit('agent-failed', { ...status, error: error instanceof Error ? error.message : String(error) });
     }
   }
 

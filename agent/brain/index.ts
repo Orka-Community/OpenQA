@@ -1,11 +1,11 @@
 import { ReActAgent } from '@orka-js/agent';
-import { OpenAIAdapter } from '@orka-js/openai';
-import { AnthropicAdapter } from '@orka-js/anthropic';
 import { EventEmitter } from 'events';
+import { logger } from '../logger.js';
 import { OpenQADatabase } from '../../database/index.js';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { execSync } from 'child_process';
+import { ResilientLLM } from './llm-resilience.js';
 
 export interface SaaSConfig {
   name: string;
@@ -49,7 +49,7 @@ export interface DynamicAgent {
 
 export class OpenQABrain extends EventEmitter {
   private db: OpenQADatabase;
-  private llmConfig: { provider: string; apiKey: string; model?: string };
+  private llm: ResilientLLM;
   private saasConfig: SaaSConfig;
   private generatedTests: Map<string, GeneratedTest> = new Map();
   private dynamicAgents: Map<string, DynamicAgent> = new Map();
@@ -58,29 +58,29 @@ export class OpenQABrain extends EventEmitter {
 
   constructor(
     db: OpenQADatabase,
-    llmConfig: { provider: string; apiKey: string; model?: string },
+    llmConfig: { provider: string; apiKey: string; model?: string; fallbackProvider?: string; fallbackApiKey?: string; fallbackModel?: string },
     saasConfig: SaaSConfig
   ) {
     super();
     this.db = db;
-    this.llmConfig = llmConfig;
     this.saasConfig = saasConfig;
-    
+
+    this.llm = new ResilientLLM({
+      provider: llmConfig.provider,
+      apiKey: llmConfig.apiKey,
+      model: llmConfig.model,
+      fallbackProvider: llmConfig.fallbackProvider,
+      fallbackApiKey: llmConfig.fallbackApiKey,
+      fallbackModel: llmConfig.fallbackModel,
+    });
+
+    // Forward LLM resilience events
+    for (const event of ['llm-retry', 'llm-fallback', 'llm-circuit-open', 'llm-circuit-half-open', 'llm-primary-failed']) {
+      this.llm.on(event, (data) => this.emit(event, data));
+    }
+
     mkdirSync(this.workDir, { recursive: true });
     mkdirSync(this.testsDir, { recursive: true });
-  }
-
-  private createLLM() {
-    if (this.llmConfig.provider === 'anthropic') {
-      return new AnthropicAdapter({
-        apiKey: this.llmConfig.apiKey,
-        model: this.llmConfig.model || 'claude-3-5-sonnet-20241022'
-      });
-    }
-    return new OpenAIAdapter({
-      apiKey: this.llmConfig.apiKey,
-      model: this.llmConfig.model || 'gpt-4'
-    });
   }
 
   async analyze(): Promise<{
@@ -89,8 +89,6 @@ export class OpenQABrain extends EventEmitter {
     suggestedAgents: string[];
     risks: string[];
   }> {
-    const llm = this.createLLM();
-    
     let codeContext = '';
     if (this.saasConfig.repoUrl || this.saasConfig.localPath) {
       codeContext = await this.analyzeCodebase();
@@ -128,15 +126,15 @@ Respond in JSON format:
   "risks": ["Risk 1", "Risk 2"]
 }`;
 
-    const response = await llm.generate(prompt);
+    const response = await this.llm.generate(prompt);
     
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[0]);
       }
-    } catch (e) {
-      console.error('Failed to parse analysis:', e);
+    } catch (e: unknown) {
+      logger.warn('Failed to parse analysis', { error: e instanceof Error ? e.message : String(e) });
     }
 
     return {
@@ -154,13 +152,13 @@ Respond in JSON format:
       repoPath = join(this.workDir, 'repo');
       
       if (!existsSync(repoPath)) {
-        console.log(`Cloning repository: ${this.saasConfig.repoUrl}`);
+        logger.info('Cloning repository', { url: this.saasConfig.repoUrl });
         try {
           execSync(`git clone --depth 1 ${this.saasConfig.repoUrl} ${repoPath}`, {
             stdio: 'pipe'
           });
         } catch (e) {
-          console.error('Failed to clone repository:', e);
+          logger.error('Failed to clone repository', { error: e instanceof Error ? e.message : String(e) });
           return '';
         }
       }
@@ -214,7 +212,7 @@ Respond in JSON format:
       }
 
     } catch (e) {
-      console.error('Error analyzing codebase:', e);
+      logger.error('Error analyzing codebase', { error: e instanceof Error ? e.message : String(e) });
     }
 
     return analysis.join('\n');
@@ -257,8 +255,6 @@ Respond in JSON format:
     target: string,
     context?: string
   ): Promise<GeneratedTest> {
-    const llm = this.createLLM();
-
     const prompt = `You are OpenQA, an autonomous QA engineer. Generate a ${type} test.
 
 ## Application
@@ -290,7 +286,7 @@ Respond with JSON:
   "priority": 1-5
 }`;
 
-    const response = await llm.generate(prompt);
+    const response = await this.llm.generate(prompt);
     
     let testData = { name: target, description: '', code: '', priority: 3 };
     
@@ -342,8 +338,6 @@ ${test.code}
   }
 
   async createDynamicAgent(purpose: string): Promise<DynamicAgent> {
-    const llm = this.createLLM();
-
     const prompt = `You are OpenQA Brain. Create a specialized testing agent.
 
 ## Application Context
@@ -368,16 +362,16 @@ Respond with JSON:
   "tools": ["tool1", "tool2"] // from: navigate, click, fill, screenshot, check_console, create_issue, create_ticket
 }`;
 
-    const response = await llm.generate(prompt);
+    const response = await this.llm.generate(prompt);
     
-    let agentData = { name: purpose, purpose, prompt: '', tools: [] };
-    
+    let agentData: { name: string; purpose: string; prompt: string; tools: string[] } = { name: purpose, purpose, prompt: '', tools: [] };
+
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         agentData = JSON.parse(jsonMatch[0]);
       }
-    } catch (e) {
+    } catch (_e: unknown) {
       agentData.prompt = response;
     }
 
@@ -421,9 +415,9 @@ Respond with JSON:
         test.status = 'passed';
         test.result = 'Test code generated (execution skipped - no test runner configured)';
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       test.status = 'failed';
-      test.error = e.message;
+      test.error = e instanceof Error ? e.message : String(e);
     }
 
     this.emit('test-completed', test);
@@ -434,8 +428,6 @@ Respond with JSON:
     decision: string;
     actions: Array<{ type: string; target: string; reason: string }>;
   }> {
-    const llm = this.createLLM();
-    
     const recentTests = Array.from(this.generatedTests.values()).slice(-10);
     const recentAgents = Array.from(this.dynamicAgents.values()).slice(-5);
 
@@ -473,8 +465,8 @@ Respond with JSON:
   ]
 }`;
 
-    const response = await llm.generate(prompt);
-    
+    const response = await this.llm.generate(prompt);
+
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -490,56 +482,57 @@ Respond with JSON:
   }
 
   async runAutonomously(maxIterations: number = 10): Promise<void> {
-    console.log(`🧠 OpenQA Brain starting autonomous mode for ${this.saasConfig.name}`);
-    
+    const log = logger.child({ app: this.saasConfig.name });
+    log.info('Brain starting autonomous mode', { maxIterations });
+
     const analysis = await this.analyze();
-    console.log(`📊 Analysis complete: ${analysis.suggestedTests.length} tests suggested`);
+    log.info('Analysis complete', { suggestedTests: analysis.suggestedTests.length });
     this.emit('analysis-complete', analysis);
 
     for (let i = 0; i < maxIterations; i++) {
-      console.log(`\n🔄 Iteration ${i + 1}/${maxIterations}`);
-      
+      log.info('Iteration', { iteration: i + 1, maxIterations });
+
       const thought = await this.think();
-      console.log(`💭 Decision: ${thought.decision}`);
+      log.debug('Decision', { decision: thought.decision });
       this.emit('thinking', thought);
 
       for (const action of thought.actions) {
-        console.log(`  ➡️ ${action.type}: ${action.target}`);
-        
+        log.debug('Action', { type: action.type, target: action.target });
+
         try {
           switch (action.type) {
             case 'generate_test':
               const testType = this.inferTestType(action.target);
               await this.generateTest(testType, action.target, action.reason);
               break;
-              
+
             case 'create_agent':
               await this.createDynamicAgent(action.target);
               break;
-              
+
             case 'run_test':
               if (this.generatedTests.has(action.target)) {
                 await this.executeTest(action.target);
               }
               break;
-              
+
             case 'analyze':
               break;
           }
-        } catch (e: any) {
-          console.error(`  ❌ Action failed: ${e.message}`);
+        } catch (e: unknown) {
+          log.error('Action failed', { type: action.type, error: e instanceof Error ? e.message : String(e) });
         }
       }
 
       if (thought.actions.length === 0) {
-        console.log('  ℹ️ No more actions needed');
+        log.info('No more actions needed');
         break;
       }
 
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
-    console.log(`\n✅ Autonomous session complete`);
+    log.info('Autonomous session complete');
     this.emit('session-complete', {
       testsGenerated: this.generatedTests.size,
       agentsCreated: this.dynamicAgents.size

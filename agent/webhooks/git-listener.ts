@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { Octokit } from '@octokit/rest';
+import { logger } from '../logger.js';
 
 export interface GitEvent {
   type: 'merge' | 'push' | 'pipeline_success' | 'pipeline_failure' | 'tag';
@@ -79,12 +80,12 @@ export class GitListener extends EventEmitter {
     if (this.isRunning) return;
     this.isRunning = true;
 
-    console.log(`🔗 GitListener started for ${this.config.provider}/${this.config.owner}/${this.config.repo}`);
+    logger.info('GitListener started', { provider: this.config.provider, owner: this.config.owner, repo: this.config.repo });
     
     await this.checkInitialState();
     
     this.pollInterval = setInterval(() => {
-      this.poll().catch(console.error);
+      this.poll().catch((e) => logger.error('Poll error', { error: e instanceof Error ? e.message : String(e) }));
     }, this.config.pollIntervalMs);
   }
 
@@ -94,7 +95,7 @@ export class GitListener extends EventEmitter {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
-    console.log('🔗 GitListener stopped');
+    logger.info('GitListener stopped');
   }
 
   private async checkInitialState() {
@@ -105,7 +106,7 @@ export class GitListener extends EventEmitter {
         await this.checkGitLabState();
       }
     } catch (error) {
-      console.error('Failed to check initial state:', error);
+      logger.error('Failed to check initial state', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -117,7 +118,7 @@ export class GitListener extends EventEmitter {
         await this.pollGitLab();
       }
     } catch (error) {
-      console.error('Poll error:', error);
+      logger.error('Poll error', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -179,7 +180,7 @@ export class GitListener extends EventEmitter {
       
       if (isMerge) {
         this.emit('merge', event);
-        console.log(`🔀 Merge detected on ${this.config.branch}: ${commit.sha.slice(0, 7)}`);
+        logger.info('Merge detected', { branch: this.config.branch, sha: commit.sha.slice(0, 7) });
       }
     }
 
@@ -215,10 +216,10 @@ export class GitListener extends EventEmitter {
           
           if (run.conclusion === 'success') {
             this.emit('pipeline-success', event);
-            console.log(`✅ Pipeline success: ${run.name} (${run.id})`);
+            logger.info('Pipeline success', { name: run.name, id: run.id });
           } else {
             this.emit('pipeline-failure', event);
-            console.log(`❌ Pipeline failure: ${run.name} (${run.id})`);
+            logger.warn('Pipeline failure', { name: run.name, id: run.id });
           }
         }
       }
@@ -254,7 +255,7 @@ export class GitListener extends EventEmitter {
         this.lastPipelineId = pipelines[0].id.toString();
       }
     } catch (error) {
-      console.error('GitLab initial state error:', error);
+      logger.error('GitLab initial state error', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -289,7 +290,7 @@ export class GitListener extends EventEmitter {
         
         if (isMerge) {
           this.emit('merge', event);
-          console.log(`🔀 Merge detected on ${this.config.branch}: ${commit.id.slice(0, 7)}`);
+          logger.info('Merge detected', { branch: this.config.branch, id: commit.id.slice(0, 7) });
         }
       }
 
@@ -323,10 +324,10 @@ export class GitListener extends EventEmitter {
           
           if (pipeline.status === 'success') {
             this.emit('pipeline-success', event);
-            console.log(`✅ Pipeline success: #${pipeline.id}`);
+            logger.info('Pipeline success', { id: pipeline.id });
           } else {
             this.emit('pipeline-failure', event);
-            console.log(`❌ Pipeline failure: #${pipeline.id}`);
+            logger.warn('Pipeline failure', { id: pipeline.id });
           }
         }
       }
@@ -335,7 +336,7 @@ export class GitListener extends EventEmitter {
         this.lastPipelineId = pipelines[0].id.toString();
       }
     } catch (error) {
-      console.error('GitLab poll error:', error);
+      logger.error('GitLab poll error', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
