@@ -24,9 +24,6 @@ WORKDIR /app
 #    Must run BEFORE any apk add so new packages are also at latest
 RUN apk upgrade --no-cache
 
-# 2. Upgrade npm itself — fixes picomatch bundled inside npm (CVE-2026-33671)
-RUN npm install -g npm@latest
-
 # 2. Only the minimal libs required by Playwright's Chromium at runtime
 #    ⚠️  No `apk add chromium` — we use Playwright's own binary instead
 RUN apk add --no-cache \
