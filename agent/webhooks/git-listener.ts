@@ -166,6 +166,16 @@ export class GitListener extends EventEmitter {
 
       const isMerge = commit.parents && commit.parents.length > 1;
       
+      let changedFiles: string[] | undefined;
+      try {
+        const { data: detail } = await this.octokit!.repos.getCommit({
+          owner: this.config.owner,
+          repo: this.config.repo,
+          ref: commit.sha,
+        });
+        changedFiles = (detail.files ?? []).map(f => f.filename);
+      } catch { /* non-fatal — changedFiles stays undefined */ }
+
       const event: GitEvent = {
         type: isMerge ? 'merge' : 'push',
         provider: 'github',
@@ -173,7 +183,8 @@ export class GitListener extends EventEmitter {
         commit: commit.sha,
         author: commit.commit.author?.name || 'unknown',
         message: commit.commit.message,
-        timestamp: new Date(commit.commit.author?.date || Date.now())
+        timestamp: new Date(commit.commit.author?.date || Date.now()),
+        changedFiles,
       };
 
       this.emit('git-event', event);
@@ -276,6 +287,16 @@ export class GitListener extends EventEmitter {
 
         const isMerge = commit.parent_ids && commit.parent_ids.length > 1;
 
+        let changedFiles: string[] | undefined;
+        try {
+          const diffRes = await fetch(
+            `${baseUrl}/api/v4/projects/${projectPath}/repository/commits/${commit.id}/diff`,
+            { headers }
+          );
+          const diffs = await diffRes.json() as Array<{ new_path: string }>;
+          changedFiles = diffs.map(d => d.new_path);
+        } catch { /* non-fatal */ }
+
         const event: GitEvent = {
           type: isMerge ? 'merge' : 'push',
           provider: 'gitlab',
@@ -283,7 +304,8 @@ export class GitListener extends EventEmitter {
           commit: commit.id,
           author: commit.author_name,
           message: commit.message,
-          timestamp: new Date(commit.created_at)
+          timestamp: new Date(commit.created_at),
+          changedFiles,
         };
 
         this.emit('git-event', event);

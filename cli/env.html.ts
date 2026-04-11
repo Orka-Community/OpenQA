@@ -1,5 +1,5 @@
 /**
- * Environment Variables Management Page
+ * Environment Variables Management Page — Design system aligned with dashboard
  */
 
 export function getEnvHTML(): string {
@@ -8,672 +8,860 @@ export function getEnvHTML(): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Environment Variables - OpenQA</title>
+  <title>OpenQA — Environment</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    
+    :root {
+      --bg: #080b10;
+      --surface: #0d1117;
+      --panel: #111720;
+      --border: rgba(255,255,255,0.06);
+      --border-hi: rgba(255,255,255,0.12);
+      --accent: #f97316;
+      --accent-lo: rgba(249,115,22,0.08);
+      --accent-md: rgba(249,115,22,0.18);
+      --green: #22c55e;
+      --green-lo: rgba(34,197,94,0.08);
+      --red: #ef4444;
+      --red-lo: rgba(239,68,68,0.08);
+      --amber: #f59e0b;
+      --amber-lo: rgba(245,158,11,0.08);
+      --blue: #38bdf8;
+      --blue-lo: rgba(56,189,248,0.08);
+      --text-1: #f1f5f9;
+      --text-2: #8b98a8;
+      --text-3: #4b5563;
+      --mono: 'DM Mono', monospace;
+      --sans: 'Syne', sans-serif;
+      --radius: 10px;
+      --radius-lg: 16px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text-1);
       min-height: 100vh;
-      padding: 20px;
+      overflow-x: hidden;
     }
 
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
+    /* ── Layout ── */
+    .shell {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      min-height: 100vh;
     }
 
-    .header {
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(10px);
-      padding: 20px 30px;
-      border-radius: 12px;
-      margin-bottom: 20px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    /* ── Sidebar ── */
+    aside {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
       display: flex;
+      flex-direction: column;
+      padding: 28px 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 24px 32px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+
+    .logo-mark {
+      width: 34px; height: 34px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-size: 17px;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    .logo-name { font-weight: 800; font-size: 18px; letter-spacing: -0.5px; }
+    .logo-version { font-family: var(--mono); font-size: 10px; color: var(--text-3); }
+
+    .nav-section { padding: 8px 12px; flex: 1; overflow-y: auto; }
+
+    .nav-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text-3);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      padding: 0 12px;
+      margin: 16px 0 6px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: var(--radius);
+      color: var(--text-2);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.15s ease;
+      cursor: pointer;
+    }
+    .nav-item:hover { color: var(--text-1); background: var(--panel); }
+    .nav-item.active { color: var(--accent); background: var(--accent-lo); }
+    .nav-item .icon { font-size: 15px; width: 20px; text-align: center; }
+
+    .sidebar-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── Main ── */
+    main { display: flex; flex-direction: column; min-height: 100vh; overflow-y: auto; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
       justify-content: space-between;
-      align-items: center;
+      padding: 20px 32px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      position: sticky;
+      top: 0;
+      z-index: 10;
     }
 
-    .header h1 {
-      font-size: 24px;
-      color: #1a202c;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
+    .page-title { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }
+    .page-sub { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 2px; }
 
-    .header-actions {
-      display: flex;
-      gap: 10px;
-    }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
 
     .btn {
-      padding: 10px 20px;
-      border: none;
+      font-family: var(--sans);
+      font-weight: 700;
+      font-size: 12px;
+      padding: 8px 16px;
       border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
+      border: none;
       cursor: pointer;
-      transition: all 0.2s;
-      text-decoration: none;
+      transition: all 0.15s ease;
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      text-decoration: none;
     }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-ghost {
+      background: var(--panel);
+      color: var(--text-2);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { border-color: var(--border-hi); color: var(--text-1); }
 
     .btn-primary {
-      background: #667eea;
-      color: white;
+      background: var(--accent);
+      color: #fff;
     }
+    .btn-primary:hover:not(:disabled) { background: #ea580c; box-shadow: 0 0 20px rgba(249,115,22,0.35); }
 
-    .btn-primary:hover {
-      background: #5568d3;
-      transform: translateY(-1px);
-    }
+    /* ── Content ── */
+    .content { padding: 28px 32px; display: flex; flex-direction: column; gap: 24px; }
 
-    .btn-secondary {
-      background: #e2e8f0;
-      color: #4a5568;
-    }
-
-    .btn-secondary:hover {
-      background: #cbd5e0;
-    }
-
-    .btn-success {
-      background: #48bb78;
-      color: white;
-    }
-
-    .btn-success:hover {
-      background: #38a169;
-    }
-
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .content {
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(10px);
-      padding: 30px;
-      border-radius: 12px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-
-    .tabs {
+    /* ── Tabs (category selector) ── */
+    .tab-bar {
       display: flex;
-      gap: 10px;
-      margin-bottom: 30px;
-      border-bottom: 2px solid #e2e8f0;
-      padding-bottom: 10px;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 4px;
+      flex-wrap: wrap;
     }
 
-    .tab {
-      padding: 10px 20px;
+    .tab-btn {
+      padding: 7px 14px;
+      background: transparent;
       border: none;
-      background: none;
-      font-size: 14px;
+      border-radius: 7px;
+      color: var(--text-3);
+      font-family: var(--sans);
+      font-size: 12px;
       font-weight: 600;
-      color: #718096;
       cursor: pointer;
-      border-bottom: 3px solid transparent;
-      transition: all 0.2s;
-    }
-
-    .tab.active {
-      color: #667eea;
-      border-bottom-color: #667eea;
-    }
-
-    .tab:hover {
-      color: #667eea;
-    }
-
-    .category-section {
-      display: none;
-    }
-
-    .category-section.active {
-      display: block;
-    }
-
-    .category-header {
+      transition: all 0.15s ease;
+      white-space: nowrap;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      margin-bottom: 20px;
+      gap: 5px;
     }
-
-    .category-title {
-      font-size: 18px;
-      font-weight: 600;
-      color: #2d3748;
+    .tab-btn:hover { color: var(--text-2); }
+    .tab-btn.active {
+      background: var(--panel);
+      color: var(--text-1);
+      border: 1px solid var(--border-hi);
     }
-
-    .env-grid {
-      display: grid;
-      gap: 20px;
+    .tab-btn .tab-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--text-3);
     }
+    .tab-btn.has-required .tab-dot { background: var(--amber); }
+    .tab-btn.active .tab-dot { background: var(--accent); }
 
-    .env-item {
-      border: 1px solid #e2e8f0;
+    /* ── Section ── */
+    .section { display: none; flex-direction: column; gap: 16px; }
+    .section.active { display: flex; }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+    .section-icon {
+      width: 36px; height: 36px;
+      background: var(--accent-lo);
+      border: 1px solid var(--accent-md);
       border-radius: 8px;
-      padding: 20px;
-      transition: all 0.2s;
+      display: grid;
+      place-items: center;
+      font-size: 16px;
     }
+    .section-title { font-size: 15px; font-weight: 700; }
+    .section-desc { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 2px; }
 
-    .env-item:hover {
-      border-color: #cbd5e0;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    /* ── Env card ── */
+    .env-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px 24px;
+      transition: border-color 0.15s;
     }
+    .env-card:hover { border-color: var(--border-hi); }
+    .env-card.has-value { border-color: rgba(249,115,22,0.15); }
 
-    .env-item-header {
+    .env-card-head {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 10px;
+      margin-bottom: 6px;
     }
 
-    .env-label {
-      font-weight: 600;
-      color: #2d3748;
-      font-size: 14px;
+    .env-key {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-1);
       display: flex;
       align-items: center;
       gap: 8px;
     }
 
-    .required-badge {
-      background: #fc8181;
-      color: white;
-      font-size: 10px;
-      padding: 2px 6px;
-      border-radius: 4px;
+    .badge-required {
+      font-family: var(--sans);
+      font-size: 9px;
       font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: rgba(239,68,68,0.15);
+      color: var(--red);
+      border: 1px solid rgba(239,68,68,0.25);
+      border-radius: 4px;
+      padding: 2px 6px;
+    }
+    .badge-sensitive {
+      font-size: 9px;
+      font-weight: 700;
+      font-family: var(--sans);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: var(--amber-lo);
+      color: var(--amber);
+      border: 1px solid rgba(245,158,11,0.2);
+      border-radius: 4px;
+      padding: 2px 6px;
     }
 
-    .env-description {
-      font-size: 13px;
-      color: #718096;
-      margin-bottom: 10px;
+    .env-desc {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-3);
+      margin-bottom: 14px;
+      line-height: 1.5;
     }
 
-    .env-input-group {
+    .env-input-row {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       align-items: center;
     }
 
-    .env-input {
+    .env-input, .env-select {
       flex: 1;
-      padding: 10px 12px;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      font-size: 14px;
-      font-family: 'Monaco', 'Courier New', monospace;
-      transition: all 0.2s;
-    }
-
-    .env-input:focus {
-      outline: none;
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-
-    .env-input.error {
-      border-color: #fc8181;
-    }
-
-    .env-actions {
-      display: flex;
-      gap: 5px;
-    }
-
-    .icon-btn {
-      padding: 8px;
-      border: none;
-      background: #e2e8f0;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-size: 16px;
-    }
-
-    .icon-btn:hover {
-      background: #cbd5e0;
-    }
-
-    .icon-btn.test {
-      background: #bee3f8;
-      color: #2c5282;
-    }
-
-    .icon-btn.test:hover {
-      background: #90cdf4;
-    }
-
-    .icon-btn.generate {
-      background: #c6f6d5;
-      color: #22543d;
-    }
-
-    .icon-btn.generate:hover {
-      background: #9ae6b4;
-    }
-
-    .error-message {
-      color: #e53e3e;
-      font-size: 12px;
-      margin-top: 5px;
-    }
-
-    .success-message {
-      color: #38a169;
-      font-size: 12px;
-      margin-top: 5px;
-    }
-
-    .alert {
-      padding: 15px 20px;
+      background: var(--surface);
+      border: 1px solid var(--border-hi);
       border-radius: 8px;
-      margin-bottom: 20px;
+      padding: 10px 14px;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text-1);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      appearance: none;
+    }
+    .env-input:focus, .env-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(249,115,22,0.12);
+    }
+    .env-input.changed { border-color: rgba(249,115,22,0.5); }
+    .env-input.invalid { border-color: var(--red); }
+
+    .env-select option { background: var(--panel); }
+
+    .env-action-btn {
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      border: 1px solid var(--border-hi);
+      background: var(--surface);
+      color: var(--text-2);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .env-action-btn:hover { background: var(--panel); color: var(--text-1); border-color: var(--border-hi); }
+    .env-action-btn.test-btn:hover { background: var(--blue-lo); color: var(--blue); border-color: rgba(56,189,248,0.25); }
+    .env-action-btn.gen-btn:hover { background: var(--green-lo); color: var(--green); border-color: rgba(34,197,94,0.25); }
+
+    .env-feedback {
+      font-family: var(--mono);
+      font-size: 11px;
+      margin-top: 8px;
+      min-height: 16px;
+    }
+    .env-feedback.error { color: var(--red); }
+    .env-feedback.success { color: var(--green); }
+
+    /* ── Toast ── */
+    .toast-zone {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 100;
+    }
+
+    .toast {
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
       display: flex;
       align-items: center;
       gap: 10px;
+      animation: slideIn 0.2s ease;
+      max-width: 380px;
+    }
+    .toast.success { background: var(--panel); border: 1px solid rgba(34,197,94,0.3); color: var(--green); }
+    .toast.error { background: var(--panel); border: 1px solid rgba(239,68,68,0.3); color: var(--red); }
+    .toast.warning { background: var(--panel); border: 1px solid rgba(245,158,11,0.3); color: var(--amber); }
+    .toast.info { background: var(--panel); border: 1px solid rgba(56,189,248,0.3); color: var(--blue); }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
-    .alert-warning {
-      background: #fef5e7;
-      border-left: 4px solid #f59e0b;
-      color: #92400e;
-    }
-
-    .alert-info {
-      background: #eff6ff;
-      border-left: 4px solid #3b82f6;
-      color: #1e40af;
-    }
-
-    .alert-success {
-      background: #f0fdf4;
-      border-left: 4px solid #10b981;
-      color: #065f46;
-    }
-
-    .loading {
-      text-align: center;
-      padding: 40px;
-      color: #718096;
-    }
-
-    .spinner {
-      border: 3px solid #e2e8f0;
-      border-top: 3px solid #667eea;
-      border-radius: 50%;
-      width: 40px;
-      height: 40px;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 20px;
-    }
-
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-
-    .modal {
+    /* ── Modal (test result) ── */
+    .modal-backdrop {
       display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 1000;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 200;
       align-items: center;
       justify-content: center;
     }
+    .modal-backdrop.open { display: flex; }
 
-    .modal.show {
-      display: flex;
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border-hi);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      width: 420px;
+      max-width: 90vw;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    }
+    .modal-title { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+    .modal-body { margin-bottom: 20px; }
+    .modal-result {
+      padding: 14px;
+      border-radius: 8px;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .modal-result.ok { background: var(--green-lo); border: 1px solid rgba(34,197,94,0.2); color: var(--green); }
+    .modal-result.fail { background: var(--red-lo); border: 1px solid rgba(239,68,68,0.2); color: var(--red); }
+    .modal-footer { display: flex; justify-content: flex-end; }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-state {
+      text-align: center;
+      padding: 60px 0;
+      color: var(--text-3);
+      font-family: var(--mono);
+      font-size: 12px;
     }
 
-    .modal-content {
-      background: white;
-      padding: 30px;
-      border-radius: 12px;
-      max-width: 500px;
-      width: 90%;
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-    }
-
-    .modal-header {
-      font-size: 20px;
+    /* ── Restart banner ── */
+    .restart-banner {
+      display: none;
+      background: var(--amber-lo);
+      border: 1px solid rgba(245,158,11,0.25);
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 13px;
+      color: var(--amber);
       font-weight: 600;
-      margin-bottom: 15px;
-      color: #2d3748;
-    }
-
-    .modal-body {
-      margin-bottom: 20px;
-      color: #4a5568;
-    }
-
-    .modal-footer {
-      display: flex;
+      align-items: center;
       gap: 10px;
-      justify-content: flex-end;
     }
+    .restart-banner.show { display: flex; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>
-        <span>⚙️</span>
+<div class="shell">
+
+  <!-- Sidebar -->
+  <aside>
+    <div class="logo">
+      <div class="logo-mark">Q</div>
+      <div>
+        <div class="logo-name">OpenQA</div>
+        <div class="logo-version">v1.3.4</div>
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Overview</div>
+      <a class="nav-item" href="/">
+        <span class="icon">📊</span> Dashboard
+      </a>
+      <a class="nav-item" href="/sessions">
+        <span class="icon">🧪</span> Sessions
+      </a>
+      <a class="nav-item" href="/issues">
+        <span class="icon">🐛</span> Issues
+      </a>
+
+      <div class="nav-label">Testing</div>
+      <a class="nav-item" href="/tests">
+        <span class="icon">⚡</span> Tests
+      </a>
+      <a class="nav-item" href="/coverage">
+        <span class="icon">📈</span> Coverage
+      </a>
+      <a class="nav-item" href="/kanban">
+        <span class="icon">📋</span> Kanban
+      </a>
+
+      <div class="nav-label">System</div>
+      <a class="nav-item" href="/config">
+        <span class="icon">⚙️</span> Config
+      </a>
+      <a class="nav-item active" href="/config/env">
+        <span class="icon">🔧</span> Environment
+      </a>
+      <a class="nav-item" href="/logs">
+        <span class="icon">📜</span> Logs
+      </a>
+    </div>
+
+    <div class="sidebar-footer">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text-3);">
         Environment Variables
-      </h1>
-      <div class="header-actions">
-        <a href="/config" class="btn btn-secondary">← Back to Config</a>
-        <button id="saveBtn" class="btn btn-success" disabled>💾 Save Changes</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main>
+    <div class="topbar">
+      <div>
+        <div class="page-title">Environment Variables</div>
+        <div class="page-sub">Configure runtime variables for OpenQA</div>
+      </div>
+      <div class="topbar-actions">
+        <a class="btn btn-ghost" href="/config">← Back to Config</a>
+        <button id="saveBtn" class="btn btn-primary" disabled>
+          💾 Save Changes
+        </button>
       </div>
     </div>
 
     <div class="content">
-      <div id="loading" class="loading">
+
+      <!-- Restart banner -->
+      <div class="restart-banner" id="restartBanner">
+        ⚠️ Some changes require a server restart to take effect.
+      </div>
+
+      <!-- Loading -->
+      <div class="loading-state" id="loadingState">
         <div class="spinner"></div>
-        <div>Loading environment variables...</div>
+        Loading environment variables…
       </div>
 
-      <div id="main" style="display: none;">
-        <div id="alerts"></div>
+      <!-- Main content (hidden while loading) -->
+      <div id="mainContent" style="display:none;flex-direction:column;gap:24px;">
 
-        <div class="tabs">
-          <button class="tab active" data-category="llm">🤖 LLM</button>
-          <button class="tab" data-category="security">🔒 Security</button>
-          <button class="tab" data-category="target">🎯 Target App</button>
-          <button class="tab" data-category="github">🐙 GitHub</button>
-          <button class="tab" data-category="web">🌐 Web Server</button>
-          <button class="tab" data-category="agent">🤖 Agent</button>
-          <button class="tab" data-category="database">💾 Database</button>
-          <button class="tab" data-category="notifications">🔔 Notifications</button>
-        </div>
+        <!-- Tab bar -->
+        <div class="tab-bar" id="tabBar"></div>
 
-        <div id="categories"></div>
+        <!-- Sections -->
+        <div id="sections"></div>
+
       </div>
     </div>
-  </div>
+  </main>
+</div>
 
-  <!-- Test Result Modal -->
-  <div id="testModal" class="modal">
-    <div class="modal-content">
-      <div class="modal-header">Test Result</div>
-      <div class="modal-body" id="testResult"></div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeTestModal()">Close</button>
-      </div>
+<!-- Test result modal -->
+<div class="modal-backdrop" id="testModal">
+  <div class="modal">
+    <div class="modal-title">Connection Test</div>
+    <div class="modal-body">
+      <div class="modal-result" id="testResultBox">…</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Close</button>
     </div>
   </div>
+</div>
 
-  <script>
-    let envVariables = [];
-    let changedVariables = {};
-    let restartRequired = false;
+<!-- Toast zone -->
+<div class="toast-zone" id="toastZone"></div>
 
-    // Load environment variables
-    async function loadEnvVariables() {
-      try {
-        const response = await fetch('/api/env');
-        if (!response.ok) throw new Error('Failed to load variables');
-        
-        const data = await response.json();
-        envVariables = data.variables;
-        
-        renderCategories();
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('main').style.display = 'block';
-      } catch (error) {
-        showAlert('error', 'Failed to load environment variables: ' + error.message);
-      }
-    }
+<script>
+/* ── State ── */
+let envVars = [];
+let changed = {};
+let hasRequiredMissing = false;
 
-    // Render categories
-    function renderCategories() {
-      const container = document.getElementById('categories');
-      const categories = [...new Set(envVariables.map(v => v.category))];
-      
-      categories.forEach((category, index) => {
-        const section = document.createElement('div');
-        section.className = 'category-section' + (index === 0 ? ' active' : '');
-        section.dataset.category = category;
-        
-        const vars = envVariables.filter(v => v.category === category);
-        
-        section.innerHTML = \`
-          <div class="category-header">
-            <div class="category-title">\${getCategoryTitle(category)}</div>
-          </div>
-          <div class="env-grid">
-            \${vars.map(v => renderEnvItem(v)).join('')}
-          </div>
-        \`;
-        
-        container.appendChild(section);
-      });
-    }
+const TABS = [
+  { id: 'llm',           label: '🤖 LLM',          desc: 'Language model provider & API keys' },
+  { id: 'security',      label: '🔒 Security',      desc: 'Authentication & JWT configuration' },
+  { id: 'target',        label: '🎯 Target App',    desc: 'Application under test settings' },
+  { id: 'github',        label: '🐙 GitHub',        desc: 'Repository & CI/CD integration' },
+  { id: 'web',           label: '🌐 Web Server',    desc: 'HTTP host, port & CORS settings' },
+  { id: 'agent',         label: '🤖 Agent',         desc: 'Autonomous agent behaviour' },
+  { id: 'database',      label: '💾 Database',      desc: 'Persistence & storage' },
+  { id: 'notifications', label: '🔔 Notifications', desc: 'Slack & Discord webhooks' },
+];
 
-    // Render single env item
-    function renderEnvItem(envVar) {
-      const inputType = envVar.type === 'password' ? 'password' : 'text';
-      const value = envVar.displayValue || '';
-      
-      return \`
-        <div class="env-item" data-key="\${envVar.key}">
-          <div class="env-item-header">
-            <div class="env-label">
-              \${envVar.key}
-              \${envVar.required ? '<span class="required-badge">REQUIRED</span>' : ''}
-            </div>
-          </div>
-          <div class="env-description">\${envVar.description}</div>
-          <div class="env-input-group">
-            \${envVar.type === 'select' ? 
-              \`<select class="env-input" data-key="\${envVar.key}" onchange="handleChange(this)">
-                <option value="">-- Select --</option>
-                \${envVar.options.map(opt => 
-                  \`<option value="\${opt}" \${value === opt ? 'selected' : ''}>\${opt}</option>\`
-                ).join('')}
-              </select>\` :
-              envVar.type === 'boolean' ?
-              \`<select class="env-input" data-key="\${envVar.key}" onchange="handleChange(this)">
-                <option value="">-- Select --</option>
-                <option value="true" \${value === 'true' ? 'selected' : ''}>true</option>
-                <option value="false" \${value === 'false' ? 'selected' : ''}>false</option>
-              </select>\` :
-              \`<input 
-                type="\${inputType}" 
-                class="env-input" 
-                data-key="\${envVar.key}"
-                value="\${value}"
-                placeholder="\${envVar.placeholder || ''}"
-                onchange="handleChange(this)"
-              />\`
-            }
-            <div class="env-actions">
-              \${envVar.testable ? \`<button class="icon-btn test" onclick="testVariable('\${envVar.key}')" title="Test">🧪</button>\` : ''}
-              \${envVar.key === 'OPENQA_JWT_SECRET' ? \`<button class="icon-btn generate" onclick="generateSecret('\${envVar.key}')" title="Generate">🔑</button>\` : ''}
-            </div>
-          </div>
-          <div class="error-message" id="error-\${envVar.key}"></div>
-          <div class="success-message" id="success-\${envVar.key}"></div>
+/* ── Init ── */
+async function init() {
+  try {
+    const res = await fetch('/api/env');
+    if (!res.ok) { toast('error', 'Failed to load environment variables (status ' + res.status + ')'); return; }
+    const data = await res.json();
+    envVars = data.variables || [];
+    renderAll();
+    document.getElementById('loadingState').style.display = 'none';
+    const mc = document.getElementById('mainContent');
+    mc.style.display = 'flex';
+  } catch (e) {
+    toast('error', 'Network error — ' + e.message);
+  }
+}
+
+/* ── Render ── */
+function renderAll() {
+  renderTabBar();
+  renderSections();
+  activateTab(TABS[0].id);
+}
+
+function renderTabBar() {
+  const bar = document.getElementById('tabBar');
+  bar.innerHTML = TABS.map(t => {
+    const vars = envVars.filter(v => v.category === t.id);
+    const hasRequired = vars.some(v => v.required);
+    return \`<button class="tab-btn\${hasRequired ? ' has-required' : ''}" data-tab="\${t.id}" onclick="activateTab('\${t.id}')">
+      <span class="tab-dot"></span>
+      \${t.label}
+    </button>\`;
+  }).join('');
+}
+
+function renderSections() {
+  const container = document.getElementById('sections');
+  container.innerHTML = TABS.map(t => {
+    const vars = envVars.filter(v => v.category === t.id);
+    return \`<div class="section" id="section-\${t.id}">
+      <div class="section-header">
+        <div class="section-icon">\${t.label.split(' ')[0]}</div>
+        <div>
+          <div class="section-title">\${t.label.slice(t.label.indexOf(' ')+1)}</div>
+          <div class="section-desc">\${t.desc}</div>
         </div>
-      \`;
-    }
+      </div>
+      \${vars.map(renderCard).join('')}
+      \${vars.length === 0 ? '<div style="color:var(--text-3);font-family:var(--mono);font-size:12px;padding:20px 0">No variables in this category.</div>' : ''}
+    </div>\`;
+  }).join('');
+}
 
-    // Handle input change
-    function handleChange(input) {
-      const key = input.dataset.key;
-      const value = input.value;
-      
-      changedVariables[key] = value;
-      document.getElementById('saveBtn').disabled = false;
-      
-      // Clear messages
-      document.getElementById(\`error-\${key}\`).textContent = '';
-      document.getElementById(\`success-\${key}\`).textContent = '';
-    }
+function renderCard(v) {
+  const displayVal = v.displayValue || '';
+  const isSensitive = v.sensitive;
+  const inputType = (v.type === 'password' && !changed[v.key]) ? 'password' : 'text';
 
-    // Save changes
-    async function saveChanges() {
-      const saveBtn = document.getElementById('saveBtn');
-      saveBtn.disabled = true;
-      saveBtn.textContent = '💾 Saving...';
-      
-      try {
-        const response = await fetch('/api/env/bulk', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ variables: changedVariables }),
-        });
-        
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || 'Failed to save');
-        }
-        
-        const result = await response.json();
-        restartRequired = result.restartRequired;
-        
-        showAlert('success', \`✅ Saved \${result.updated} variable(s) successfully!\` + 
-          (restartRequired ? ' ⚠️ Restart required for changes to take effect.' : ''));
-        
-        changedVariables = {};
-        saveBtn.textContent = '💾 Save Changes';
-        
-        // Reload to show updated values
-        setTimeout(() => location.reload(), 2000);
-      } catch (error) {
-        showAlert('error', 'Failed to save: ' + error.message);
-        saveBtn.disabled = false;
-        saveBtn.textContent = '💾 Save Changes';
-      }
-    }
+  let inputHTML = '';
+  if (v.type === 'select' || v.type === 'boolean') {
+    const opts = v.type === 'boolean'
+      ? [{ val: 'true', lbl: 'true' }, { val: 'false', lbl: 'false' }]
+      : (v.options || []).map(o => ({ val: o, lbl: o }));
+    inputHTML = \`<select class="env-select" data-key="\${v.key}" onchange="handleChange(this)">
+      <option value="">— Select —</option>
+      \${opts.map(o => \`<option value="\${o.val}" \${displayVal === o.val ? 'selected' : ''}>\${o.lbl}</option>\`).join('')}
+    </select>\`;
+  } else {
+    inputHTML = \`<input
+      type="\${inputType}"
+      class="env-input"
+      data-key="\${v.key}"
+      value="\${escHtml(displayVal)}"
+      placeholder="\${escHtml(v.placeholder || '')}"
+      oninput="handleChange(this)"
+      autocomplete="off"
+    />\`;
+  }
 
-    // Test variable
-    async function testVariable(key) {
-      const input = document.querySelector(\`[data-key="\${key}"]\`);
-      const value = input.value;
-      
-      if (!value) {
-        showAlert('warning', 'Please enter a value first');
-        return;
-      }
-      
-      try {
-        const response = await fetch(\`/api/env/test/\${key}\`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ value }),
-        });
-        
-        const result = await response.json();
-        showTestResult(result);
-      } catch (error) {
-        showTestResult({ success: false, message: 'Test failed: ' + error.message });
-      }
-    }
+  const testBtn = v.testable
+    ? \`<button class="env-action-btn test-btn" onclick="testVar('\${v.key}')" title="Test connection">🧪</button>\`
+    : '';
 
-    // Generate secret
-    async function generateSecret(key) {
-      try {
-        const response = await fetch(\`/api/env/generate/\${key}\`, {
-          method: 'POST',
-        });
-        
-        if (!response.ok) throw new Error('Failed to generate');
-        
-        const result = await response.json();
-        const input = document.querySelector(\`[data-key="\${key}"]\`);
-        input.value = result.value;
-        handleChange(input);
-        
-        document.getElementById(\`success-\${key}\`).textContent = '✅ Secret generated!';
-      } catch (error) {
-        document.getElementById(\`error-\${key}\`).textContent = 'Failed to generate: ' + error.message;
-      }
-    }
+  const genBtn = v.key === 'OPENQA_JWT_SECRET'
+    ? \`<button class="env-action-btn gen-btn" onclick="generateSecret('\${v.key}')" title="Generate secret">🔑</button>\`
+    : '';
 
-    // Show test result
-    function showTestResult(result) {
-      const modal = document.getElementById('testModal');
-      const resultDiv = document.getElementById('testResult');
-      
-      resultDiv.innerHTML = \`
-        <div class="alert \${result.success ? 'alert-success' : 'alert-warning'}">
-          \${result.success ? '✅' : '❌'} \${result.message}
-        </div>
-      \`;
-      
-      modal.classList.add('show');
-    }
+  const toggleBtn = (v.type === 'password' || isSensitive)
+    ? \`<button class="env-action-btn" onclick="toggleVis('\${v.key}')" title="Toggle visibility" id="vis-\${v.key}">👁</button>\`
+    : '';
 
-    function closeTestModal() {
-      document.getElementById('testModal').classList.remove('show');
-    }
+  return \`<div class="env-card\${displayVal ? ' has-value' : ''}" id="card-\${v.key}">
+    <div class="env-card-head">
+      <div class="env-key">
+        \${v.key}
+        \${v.required ? '<span class="badge-required">Required</span>' : ''}
+        \${isSensitive ? '<span class="badge-sensitive">Sensitive</span>' : ''}
+      </div>
+    </div>
+    <div class="env-desc">\${v.description}</div>
+    <div class="env-input-row">
+      \${inputHTML}
+      \${toggleBtn}
+      \${testBtn}
+      \${genBtn}
+    </div>
+    <div class="env-feedback" id="fb-\${v.key}"></div>
+  </div>\`;
+}
 
-    // Show alert
-    function showAlert(type, message) {
-      const alerts = document.getElementById('alerts');
-      const alertClass = type === 'error' ? 'alert-warning' : 
-                        type === 'success' ? 'alert-success' : 'alert-info';
-      
-      alerts.innerHTML = \`
-        <div class="alert \${alertClass}">
-          \${message}
-        </div>
-      \`;
-      
-      setTimeout(() => alerts.innerHTML = '', 5000);
-    }
+/* ── Tab switching ── */
+function activateTab(id) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === id));
+  document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === 'section-' + id));
+}
 
-    // Get category title
-    function getCategoryTitle(category) {
-      const titles = {
-        llm: '🤖 LLM Configuration',
-        security: '🔒 Security Settings',
-        target: '🎯 Target Application',
-        github: '🐙 GitHub Integration',
-        web: '🌐 Web Server',
-        agent: '🤖 Agent Configuration',
-        database: '💾 Database',
-        notifications: '🔔 Notifications',
-      };
-      return titles[category] || category;
-    }
+/* ── Input handling ── */
+function handleChange(el) {
+  const key = el.dataset.key;
+  const val = el.value;
+  changed[key] = val;
+  el.classList.add('changed');
+  el.classList.remove('invalid');
+  clearFeedback(key);
+  document.getElementById('saveBtn').disabled = false;
+}
 
-    // Tab switching
-    document.addEventListener('click', (e) => {
-      if (e.target.classList.contains('tab')) {
-        const category = e.target.dataset.category;
-        
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        e.target.classList.add('active');
-        
-        document.querySelectorAll('.category-section').forEach(s => s.classList.remove('active'));
-        document.querySelector(\`[data-category="\${category}"]\`).classList.add('active');
-      }
+/* ── Toggle password visibility ── */
+function toggleVis(key) {
+  const inp = document.querySelector('[data-key="' + key + '"]');
+  if (!inp || inp.tagName !== 'INPUT') return;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+/* ── Save ── */
+async function saveChanges() {
+  if (!Object.keys(changed).length) return;
+
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Saving…';
+
+  try {
+    const res = await fetch('/api/env/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ variables: changed }),
+      credentials: 'include',
     });
 
-    // Save button
-    document.getElementById('saveBtn').addEventListener('click', saveChanges);
+    const body = await res.json().catch(() => ({}));
 
-    // Load on page load
-    loadEnvVariables();
-  </script>
+    if (!res.ok) {
+      const errStr = body.errors
+        ? Object.entries(body.errors).map(([k, v]) => k + ': ' + v).join('; ')
+        : body.error || 'Failed to save';
+      // Show per-field errors
+      if (body.errors) {
+        for (const [k, msg] of Object.entries(body.errors)) {
+          setFeedback(k, 'error', msg);
+          const inp = document.querySelector('[data-key="' + k + '"]');
+          if (inp) inp.classList.add('invalid');
+        }
+      }
+      toast('error', errStr);
+      btn.disabled = false;
+      btn.innerHTML = '💾 Save Changes';
+      return;
+    }
+
+    toast('success', '✅ Saved ' + body.updated + ' variable(s)');
+    if (body.restartRequired) {
+      document.getElementById('restartBanner').classList.add('show');
+    }
+
+    changed = {};
+    btn.innerHTML = '💾 Save Changes';
+    // Reload to reflect masked values
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) {
+    toast('error', 'Network error — ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '💾 Save Changes';
+  }
+}
+
+/* ── Test variable ── */
+async function testVar(key) {
+  const inp = document.querySelector('[data-key="' + key + '"]');
+  const val = inp ? inp.value : '';
+  if (!val) { toast('warning', 'Enter a value first'); return; }
+
+  setFeedback(key, '', '');
+  const btn = document.querySelector('[onclick="testVar(\\''+key+'\\')"]');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+
+  try {
+    const res = await fetch('/api/env/test/' + key, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: val }),
+      credentials: 'include',
+    });
+    const result = await res.json();
+    openModal(result.success, result.message);
+    setFeedback(key, result.success ? 'success' : 'error', result.success ? '✓ Connected' : '✗ ' + result.message);
+  } catch (e) {
+    openModal(false, 'Network error: ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = '🧪'; btn.disabled = false; }
+  }
+}
+
+/* ── Generate secret ── */
+async function generateSecret(key) {
+  try {
+    const res = await fetch('/api/env/generate/' + key, {
+      method: 'POST', credentials: 'include'
+    });
+    if (!res.ok) throw new Error('Failed to generate');
+    const { value } = await res.json();
+    const inp = document.querySelector('[data-key="' + key + '"]');
+    if (inp) {
+      inp.type = 'text';
+      inp.value = value;
+      handleChange(inp);
+    }
+    setFeedback(key, 'success', '✓ Secret generated — save to persist');
+  } catch (e) {
+    setFeedback(key, 'error', e.message);
+  }
+}
+
+/* ── Modal ── */
+function openModal(ok, msg) {
+  const box = document.getElementById('testResultBox');
+  box.className = 'modal-result ' + (ok ? 'ok' : 'fail');
+  box.textContent = (ok ? '✓ ' : '✗ ') + msg;
+  document.getElementById('testModal').classList.add('open');
+}
+function closeModal() {
+  document.getElementById('testModal').classList.remove('open');
+}
+
+/* ── Toast ── */
+function toast(type, msg) {
+  const zone = document.getElementById('toastZone');
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  zone.appendChild(el);
+  setTimeout(() => el.remove(), 4500);
+}
+
+/* ── Feedback ── */
+function setFeedback(key, type, msg) {
+  const el = document.getElementById('fb-' + key);
+  if (!el) return;
+  el.className = 'env-feedback' + (type ? ' ' + type : '');
+  el.textContent = msg;
+}
+function clearFeedback(key) { setFeedback(key, '', ''); }
+
+/* ── Helpers ── */
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+/* ── Wire save button ── */
+document.getElementById('saveBtn').addEventListener('click', saveChanges);
+
+/* ── Close modal on backdrop click ── */
+document.getElementById('testModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+/* ── Boot ── */
+init();
+</script>
 </body>
 </html>`;
 }

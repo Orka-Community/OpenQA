@@ -6,6 +6,8 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { execSync } from 'child_process';
 import { ResilientLLM } from './llm-resilience.js';
+import { LLMCache } from './llm-cache.js';
+import { DiffAnalyzer } from './diff-analyzer.js';
 
 export interface SaaSConfig {
   name: string;
@@ -50,6 +52,8 @@ export interface DynamicAgent {
 export class OpenQABrain extends EventEmitter {
   private db: OpenQADatabase;
   private llm: ResilientLLM;
+  private cache = new LLMCache();
+  private diffAnalyzer = new DiffAnalyzer();
   private saasConfig: SaaSConfig;
   private generatedTests: Map<string, GeneratedTest> = new Map();
   private dynamicAgents: Map<string, DynamicAgent> = new Map();
@@ -126,8 +130,10 @@ Respond in JSON format:
   "risks": ["Risk 1", "Risk 2"]
 }`;
 
-    const response = await this.llm.generate(prompt);
-    
+    const cached = this.cache.get(prompt);
+    const response = cached ?? await this.llm.generate(prompt);
+    if (!cached) this.cache.set(prompt, response);
+
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -286,8 +292,10 @@ Respond with JSON:
   "priority": 1-5
 }`;
 
-    const response = await this.llm.generate(prompt);
-    
+    const cached2 = this.cache.get(prompt);
+    const response = cached2 ?? await this.llm.generate(prompt);
+    if (!cached2) this.cache.set(prompt, response);
+
     let testData = { name: target, description: '', code: '', priority: 3 };
     
     try {
@@ -362,8 +370,10 @@ Respond with JSON:
   "tools": ["tool1", "tool2"] // from: navigate, click, fill, screenshot, check_console, create_issue, create_ticket
 }`;
 
-    const response = await this.llm.generate(prompt);
-    
+    const cached3 = this.cache.get(prompt);
+    const response = cached3 ?? await this.llm.generate(prompt);
+    if (!cached3) this.cache.set(prompt, response);
+
     let agentData: { name: string; purpose: string; prompt: string; tools: string[] } = { name: purpose, purpose, prompt: '', tools: [] };
 
     try {
@@ -465,7 +475,9 @@ Respond with JSON:
   ]
 }`;
 
-    const response = await this.llm.generate(prompt);
+    const cached4 = this.cache.get(prompt);
+    const response = cached4 ?? await this.llm.generate(prompt);
+    if (!cached4) this.cache.set(prompt, response);
 
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
@@ -574,5 +586,46 @@ Respond with JSON:
         performance: tests.filter(t => t.type === 'performance').length
       }
     };
+  }
+
+  /**
+   * B8 — Incremental mode: only generate tests for files changed vs baseBranch.
+   * Emits 'diff-analyzed' with the DiffResult, then runs autonomously with a reduced
+   * scope derived from the changed files.
+   */
+  async runIncrementally(baseBranch: string = 'main'): Promise<void> {
+    const repoPath = this.saasConfig.localPath;
+    if (!repoPath) {
+      logger.warn('runIncrementally: no localPath configured, falling back to full run');
+      return this.runAutonomously();
+    }
+
+    const diff = this.diffAnalyzer.analyze(repoPath, baseBranch);
+    logger.info('Incremental diff', { changedFiles: diff.changedFiles.length, affectedTests: diff.affectedTests.length, riskLevel: diff.riskLevel });
+    this.emit('diff-analyzed', diff);
+
+    if (diff.changedFiles.length === 0) {
+      logger.info('No changed files — skipping incremental run');
+      this.emit('session-complete', { testsGenerated: 0, agentsCreated: 0, incremental: true });
+      return;
+    }
+
+    // Generate targeted tests for each changed file
+    for (const file of diff.changedFiles.slice(0, 10)) {
+      const testType = this.inferTestType(file);
+      const context = `Changed file: ${file}\nRisk level: ${diff.riskLevel}\n${diff.summary}`;
+      try {
+        await this.generateTest(testType, `Test coverage for ${file}`, context);
+      } catch (e: unknown) {
+        logger.error('Failed to generate test for file', { file, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    this.emit('session-complete', {
+      testsGenerated: this.generatedTests.size,
+      agentsCreated: this.dynamicAgents.size,
+      incremental: true,
+      diff,
+    });
   }
 }

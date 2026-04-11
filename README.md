@@ -14,6 +14,8 @@
   <a href="https://github.com/Orka-Community/OpenQA/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@openqa/cli.svg" alt="license"></a>
   <a href="https://openqa.orkajs.com"><img src="https://img.shields.io/badge/docs-orkajs.com-blue.svg" alt="documentation"></a>
   <a href="https://discord.com/invite/DScfpuPysP"><img src="https://img.shields.io/badge/discord-join%20chat-7289da.svg" alt="discord"></a>
+  <a href="https://hub.docker.com/r/orklab/openqa"><img src="https://img.shields.io/docker/v/orklab/openqa?label=docker&logo=docker&color=0db7ed" alt="Docker Hub"></a>
+  <a href="https://hub.docker.com/r/orklab/openqa"><img src="https://img.shields.io/docker/pulls/orklab/openqa.svg" alt="Docker Pulls"></a>
 </p>
 
 ---
@@ -47,6 +49,30 @@ OpenQA is a **truly autonomous** QA testing agent that thinks, codes, and execut
 - **Security Tests** - SQL injection, XSS, auth bypass
 - **Regression Tests** - Verify bug fixes
 - **Performance Tests** - Load times, resource usage
+
+## 🐳 Docker Hub
+
+OpenQA is available on Docker Hub at **[orklab/openqa](https://hub.docker.com/r/orklab/openqa)**.
+
+```bash
+# Pull the latest image
+docker pull orklab/openqa:latest
+
+# Run with your API key
+docker run -d \
+  -p 4242:3000 \
+  -e LLM_PROVIDER=openai \
+  -e OPENAI_API_KEY=sk-xxx \
+  -e OPENQA_JWT_SECRET=$(openssl rand -hex 32) \
+  -e SAAS_URL=https://your-app.com \
+  -v openqa-data:/app/data \
+  --name openqa \
+  orklab/openqa:latest
+```
+
+Then open **http://localhost:4242** — first run will prompt you to create an admin account.
+
+---
 
 ## 🚀 Quick Start
 
