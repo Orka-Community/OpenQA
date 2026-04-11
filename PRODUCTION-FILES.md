@@ -140,7 +140,7 @@ Changeset for authentication security fixes
 | Documentation | 3 | ~600 |
 | Scripts | 1 | ~250 |
 | Cloud Configs | 2 | ~100 |
-| **Total** | **12** | **~1,350** |
+| **Total** | **12** | **~1,350**|
 
 ## 🎯 Quick Reference
 

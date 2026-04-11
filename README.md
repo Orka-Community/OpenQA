@@ -14,8 +14,8 @@
   <a href="https://github.com/Orka-Community/OpenQA/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@openqa/cli.svg" alt="license"></a>
   <a href="https://openqa.orkajs.com"><img src="https://img.shields.io/badge/docs-orkajs.com-blue.svg" alt="documentation"></a>
   <a href="https://discord.com/invite/DScfpuPysP"><img src="https://img.shields.io/badge/discord-join%20chat-7289da.svg" alt="discord"></a>
-  <a href="https://hub.docker.com/r/orklab/openqa"><img src="https://img.shields.io/docker/v/orklab/openqa?label=docker&logo=docker&color=0db7ed" alt="Docker Hub"></a>
-  <a href="https://hub.docker.com/r/orklab/openqa"><img src="https://img.shields.io/docker/pulls/orklab/openqa.svg" alt="Docker Pulls"></a>
+  <a href="https://hub.docker.com/r/orkalab/openqa"><img src="https://img.shields.io/docker/v/orkalab/openqa?label=docker&logo=docker&color=0db7ed" alt="Docker Hub"></a>
+  <a href="https://hub.docker.com/r/orkalab/openqa"><img src="https://img.shields.io/docker/pulls/orkalab/openqa.svg" alt="Docker Pulls"></a>
 </p>
 
 ---
@@ -52,11 +52,11 @@ OpenQA is a **truly autonomous** QA testing agent that thinks, codes, and execut
 
 ## 🐳 Docker Hub
 
-OpenQA is available on Docker Hub at **[orklab/openqa](https://hub.docker.com/r/orklab/openqa)**.
+OpenQA is available on Docker Hub at **[orkalab/openqa](https://hub.docker.com/r/orkalab/openqa)**.
 
 ```bash
 # Pull the latest image
-docker pull orklab/openqa:latest
+docker pull orkalab/openqa:latest
 
 # Run with your API key
 docker run -d \
@@ -67,7 +67,7 @@ docker run -d \
   -e SAAS_URL=https://your-app.com \
   -v openqa-data:/app/data \
   --name openqa \
-  orklab/openqa:latest
+  orkalab/openqa:latest
 ```
 
 Then open **http://localhost:4242** — first run will prompt you to create an admin account.
@@ -637,11 +637,11 @@ MIT
 ## 🙏 Credits
 
 Built with:
-- [Orka.js](https://orkajs.dev) - AI framework
+- [Orka.js](https://orkajs.com) - AI framework
 - [Playwright](https://playwright.dev) - Browser automation
 - [Next.js](https://nextjs.org) - Web interface
 - [SQLite](https://sqlite.org) - Database
 
 ---
 
-Made with ❤️ by the Orka.js team
+Made with ❤️ by the Orka Team
