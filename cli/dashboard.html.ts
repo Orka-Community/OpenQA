@@ -75,7 +75,7 @@ export function getDashboardHTML(): string {
     .logo-mark {
       width: 34px;
       height: 34px;
-      background: var(--accent);
+      background: transparent;
       border-radius: 8px;
       display: grid;
       place-items: center;
@@ -697,7 +697,9 @@ export function getDashboardHTML(): string {
   <!-- Sidebar -->
   <aside>
     <div class="logo">
-      <div class="logo-mark">🔬</div>
+      <div class="logo-mark">
+       <img src="https://openqa.orkajs.com/_next/image?url=https%3A%2F%2Forkajs.com%2Floutre-orka-qa.png&w=256&q=75" alt="OpenQA Logo" style="width: 40px; height: 40px;">
+      </div>
       <div>
         <div class="logo-name">OpenQA</div>
         <div class="logo-version">v2.1.0 · OSS</div>
@@ -707,42 +709,69 @@ export function getDashboardHTML(): string {
     <div class="nav-section">
       <div class="nav-label">Overview</div>
       <a class="nav-item active" href="/">
-        <span class="icon">▦</span> Dashboard
+        <span class="icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-gauge-icon lucide-gauge"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+        </span> Dashboard
       </a>
       <a class="nav-item" href="/kanban">
-        <span class="icon">⊞</span> Kanban
+        <span class="icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square-dashed-kanban-icon lucide-square-dashed-kanban"><path d="M8 7v7"/><path d="M12 7v4"/><path d="M16 7v9"/><path d="M5 3a2 2 0 0 0-2 2"/><path d="M9 3h1"/><path d="M14 3h1"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 9v1"/><path d="M21 14v1"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M14 21h1"/><path d="M9 21h1"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M3 14v1"/><path d="M3 9v1"/></svg>
+        </span> Kanban
         <span class="badge" id="kanban-count">0</span>
       </a>
 
       <div class="nav-label">Agents</div>
       <a class="nav-item" href="javascript:void(0)" onclick="scrollToSection('agents-table')">
-        <span class="icon">◎</span> Active Agents
+        <span class="icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-activity-icon lucide-activity"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>
+        </span> Active Agents
       </a>
       <a class="nav-item" href="javascript:void(0)" onclick="switchAgentTab('specialists'); scrollToSection('agents-table')">
-        <span class="icon">◇</span> Specialists
+        <span class="icon">
+         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-hat-glasses-icon lucide-hat-glasses"><path d="M14 18a2 2 0 0 0-4 0"/><path d="m19 11-2.11-6.657a2 2 0 0 0-2.752-1.148l-1.276.61A2 2 0 0 1 12 4H8.5a2 2 0 0 0-1.925 1.456L5 11"/><path d="M2 11h20"/><circle cx="17" cy="18" r="3"/><circle cx="7" cy="18" r="3"/></svg>
+        </span> Specialists
       </a>
       <a class="nav-item" href="javascript:void(0)" onclick="scrollToSection('interventions-panel')">
-        <span class="icon">⚠</span> Interventions
+        <span class="icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-user-cog-icon lucide-user-cog"><path d="M10 15H6a4 4 0 0 0-4 4v2"/><path d="m14.305 16.53.923-.382"/><path d="m15.228 13.852-.923-.383"/><path d="m16.852 12.228-.383-.923"/><path d="m16.852 17.772-.383.924"/><path d="m19.148 12.228.383-.923"/><path d="m19.53 18.696-.382-.924"/><path d="m20.772 13.852.924-.383"/><path d="m20.772 16.148.924.383"/><circle cx="18" cy="15" r="3"/><circle cx="9" cy="7" r="4"/></svg>
+        </span> Interventions
         <span class="badge" id="intervention-count" style="background: var(--red);">0</span>
       </a>
 
       <div class="nav-label">Analysis</div>
       <a class="nav-item" href="javascript:void(0)" onclick="scrollToSection('issues-panel')">
-        <span class="icon">🐛</span> Bug Reports
+        <span class="icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bug-play-icon lucide-bug-play"><path d="M10 19.655A6 6 0 0 1 6 14v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 3.97"/><path d="M14 15.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997a1 1 0 0 1-1.517-.86z"/>
+            <path d="M14.12 3.88 16 2"/>
+            <path d="M21 5a4 4 0 0 1-3.55 3.97"/>
+            <path d="M3 21a4 4 0 0 1 3.81-4"/>
+            <path d="M3 5a4 4 0 0 0 3.55 3.97"/>
+            <path d="M6 13H2"/><path d="m8 2 1.88 1.88"/>
+            <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13"/>
+          </svg>
+        </span> Bug Reports
       </a>
       <a class="nav-item" href="javascript:void(0)" onclick="switchChartTab('performance'); scrollToSection('chart-performance')">
-        <span class="icon">⚡</span> Performance
+        <span class="icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chart-spline-icon lucide-chart-spline"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 16c.5-2 1.5-7 4-7 2 0 2 3 4 3 2.5 0 4.5-5 5-7"/></svg>
+        </span> Performance
       </a>
       <a class="nav-item" href="javascript:void(0)" onclick="scrollToSection('activity-list')">
-        <span class="icon">📋</span> Logs
+        <span class="icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-scroll-text-icon lucide-scroll-text"><path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/></svg>
+        </span> Logs
       </a>
 
       <div class="nav-label">System</div>
       <a class="nav-item" href="/config">
-        <span class="icon">⚙</span> Config
+        <span class="icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-columns3-cog-icon lucide-columns-3-cog"><path d="M10.5 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5.5"/><path d="m14.3 19.6 1-.4"/><path d="M15 3v7.5"/><path d="m15.2 16.9-.9-.3"/><path d="m16.6 21.7.3-.9"/><path d="m16.8 15.3-.4-1"/><path d="m19.1 15.2.3-.9"/><path d="m19.6 21.7-.4-1"/><path d="m20.7 16.8 1-.4"/><path d="m21.7 19.4-.9-.3"/><path d="M9 3v18"/><circle cx="18" cy="18" r="3"/></svg>
+        </span> Config
       </a>
       <a class="nav-item" href="/config/env">
-        <span class="icon">🔧</span> Environment
+        <span class="icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-columns3-cog-icon lucide-columns-3-cog"><path d="M10.5 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5.5"/><path d="m14.3 19.6 1-.4"/><path d="M15 3v7.5"/><path d="m15.2 16.9-.9-.3"/><path d="m16.6 21.7.3-.9"/><path d="m16.8 15.3-.4-1"/><path d="m19.1 15.2.3-.9"/><path d="m19.6 21.7-.4-1"/><path d="m20.7 16.8 1-.4"/><path d="m21.7 19.4-.9-.3"/><path d="M9 3v18"/><circle cx="18" cy="18" r="3"/></svg>
+        </span> Environment
       </a>
     </div>
 
@@ -774,7 +803,9 @@ export function getDashboardHTML(): string {
         <div class="metric-card">
           <div class="metric-header">
             <div class="metric-label">Active Agents</div>
-            <div class="metric-icon">🤖</div>
+            <div class="metric-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square-terminal-icon lucide-square-terminal"><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg>
+            </div>
           </div>
           <div class="metric-value" id="active-agents">0</div>
           <div class="metric-change positive" id="agents-change">↑ 0 from last hour</div>
@@ -782,7 +813,9 @@ export function getDashboardHTML(): string {
         <div class="metric-card">
           <div class="metric-header">
             <div class="metric-label">Total Actions</div>
-            <div class="metric-icon">⚡</div>
+            <div class="metric-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-list-todo-icon lucide-list-todo"><path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><rect x="3" y="4" width="6" height="6" rx="1"/></svg>
+            </div>
           </div>
           <div class="metric-value" id="total-actions">0</div>
           <div class="metric-change positive" id="actions-change">↑ 0% this session</div>
@@ -790,7 +823,9 @@ export function getDashboardHTML(): string {
         <div class="metric-card">
           <div class="metric-header">
             <div class="metric-label">Bugs Found</div>
-            <div class="metric-icon">🐛</div>
+            <div class="metric-icon">
+               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-list-todo-icon lucide-list-todo"><path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><rect x="3" y="4" width="6" height="6" rx="1"/></svg>
+            </div>
           </div>
           <div class="metric-value" id="bugs-found">0</div>
           <div class="metric-change negative" id="bugs-change">↓ 0 from yesterday</div>
@@ -798,7 +833,9 @@ export function getDashboardHTML(): string {
         <div class="metric-card">
           <div class="metric-header">
             <div class="metric-label">Success Rate</div>
-            <div class="metric-icon">✓</div>
+            <div class="metric-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-cloud-check-icon lucide-cloud-check"><path d="m17 15-5.5 5.5L9 18"/><path d="M5.516 16.07A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 3.501 7.327"/></svg>
+            </div>
           </div>
           <div class="metric-value" id="success-rate">—</div>
           <div class="metric-change positive" id="rate-change">↑ 0 pts improvement</div>

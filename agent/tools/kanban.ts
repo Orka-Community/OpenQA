@@ -14,18 +14,14 @@ export class KanbanTools {
       {
         name: 'create_kanban_ticket',
         description: 'Create a ticket on the internal Kanban board for QA tracking. Use this for bugs, improvements, or test findings.',
-        parameters: {
-          type: 'object',
-          properties: {
-            title: { type: 'string', description: 'Ticket title' },
-            description: { type: 'string', description: 'Detailed description' },
-            priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical'], description: 'Ticket priority' },
-            column: { type: 'string', enum: ['backlog', 'to-do', 'in-progress', 'done'], description: 'Kanban column' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tags for categorization' },
-            screenshot_path: { type: 'string', description: 'Path to screenshot evidence' }
-          },
-          required: ['title', 'description', 'priority']
-        },
+        parameters: [
+          { name: 'title', type: 'string' as const, description: 'Ticket title', required: true },
+          { name: 'description', type: 'string' as const, description: 'Detailed description', required: true },
+          { name: 'priority', type: 'string' as const, description: 'Ticket priority (low, medium, high, critical)', required: true },
+          { name: 'column', type: 'string' as const, description: 'Kanban column (backlog, to-do, in-progress, done)', required: false },
+          { name: 'tags', type: 'string' as const, description: 'Comma-separated tags for categorization', required: false },
+          { name: 'screenshot_path', type: 'string' as const, description: 'Path to screenshot evidence', required: false }
+        ],
         execute: async ({ title, description, priority, column = 'to-do', tags = [], screenshot_path }: { title: string; description: string; priority: KanbanTicket['priority']; column?: KanbanTicket['column']; tags?: string[]; screenshot_path?: string }) => {
           try {
             const allTags = ['automated-qa', ...tags];
@@ -47,24 +43,20 @@ export class KanbanTools {
               output: ticket.id
             });
 
-            return `✅ Kanban ticket created successfully!\nID: ${ticket.id}\nColumn: ${column}\nPriority: ${priority}`;
+            return { output: `✅ Kanban ticket created successfully!\nID: ${ticket.id}\nColumn: ${column}\nPriority: ${priority}` };
           } catch (error: unknown) {
-            return `❌ Failed to create Kanban ticket: ${error instanceof Error ? error.message : String(error)}`;
+            return { output: `❌ Failed to create Kanban ticket: ${error instanceof Error ? error.message : String(error)}`, error: error instanceof Error ? error.message : String(error) };
           }
         }
       },
       {
         name: 'update_kanban_ticket',
         description: 'Update an existing Kanban ticket (move columns, change priority, etc.)',
-        parameters: {
-          type: 'object',
-          properties: {
-            ticket_id: { type: 'string', description: 'ID of the ticket to update' },
-            column: { type: 'string', enum: ['backlog', 'to-do', 'in-progress', 'done'], description: 'New column' },
-            priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical'], description: 'New priority' }
-          },
-          required: ['ticket_id']
-        },
+        parameters: [
+          { name: 'ticket_id', type: 'string' as const, description: 'ID of the ticket to update', required: true },
+          { name: 'column', type: 'string' as const, description: 'New column (backlog, to-do, in-progress, done)', required: false },
+          { name: 'priority', type: 'string' as const, description: 'New priority (low, medium, high, critical)', required: false }
+        ],
         execute: async ({ ticket_id, column, priority }: { ticket_id: string; column?: KanbanTicket['column']; priority?: KanbanTicket['priority'] }) => {
           try {
             const updates: Partial<KanbanTicket> = {};
@@ -73,19 +65,16 @@ export class KanbanTools {
 
             await this.db.updateKanbanTicket(ticket_id, updates);
 
-            return `✅ Kanban ticket ${ticket_id} updated successfully!`;
+            return { output: `✅ Kanban ticket ${ticket_id} updated successfully!` };
           } catch (error: unknown) {
-            return `❌ Failed to update Kanban ticket: ${error instanceof Error ? error.message : String(error)}`;
+            return { output: `❌ Failed to update Kanban ticket: ${error instanceof Error ? error.message : String(error)}`, error: error instanceof Error ? error.message : String(error) };
           }
         }
       },
       {
         name: 'get_kanban_board',
         description: 'Get all tickets from the Kanban board to see current status',
-        parameters: {
-          type: 'object',
-          properties: {}
-        },
+        parameters: [],
         execute: async () => {
           try {
             const tickets = await this.db.getKanbanTickets();
@@ -107,9 +96,9 @@ export class KanbanTools {
 Total: ${tickets.length} tickets
             `.trim();
 
-            return summary;
+            return { output: summary };
           } catch (error: unknown) {
-            return `❌ Failed to get Kanban board: ${error instanceof Error ? error.message : String(error)}`;
+            return { output: `❌ Failed to get Kanban board: ${error instanceof Error ? error.message : String(error)}`, error: error instanceof Error ? error.message : String(error) };
           }
         }
       }

@@ -30,13 +30,9 @@ export class BrowserTools {
       {
         name: 'navigate_to_page',
         description: 'Navigate to a specific URL in the application',
-        parameters: {
-          type: 'object',
-          properties: {
-            url: { type: 'string', description: 'The URL to navigate to' }
-          },
-          required: ['url']
-        },
+        parameters: [
+          { name: 'url', type: 'string' as const, description: 'The URL to navigate to', required: true }
+        ],
         execute: async ({ url }: { url: string }) => {
           if (!this.page) await this.initialize();
           
@@ -52,24 +48,20 @@ export class BrowserTools {
               output: `Page title: ${title}`
             });
             
-            return `Successfully navigated to ${url}. Page title: "${title}"`;
+            return { output: `Successfully navigated to ${url}. Page title: "${title}"` };
           } catch (error: unknown) {
-            return `Failed to navigate: ${error instanceof Error ? error.message : String(error)}`;
+            return { output: `Failed to navigate: ${error instanceof Error ? error.message : String(error)}`, error: error instanceof Error ? error.message : String(error) };
           }
         }
       },
       {
         name: 'click_element',
         description: 'Click on an element using a CSS selector',
-        parameters: {
-          type: 'object',
-          properties: {
-            selector: { type: 'string', description: 'CSS selector of the element to click' }
-          },
-          required: ['selector']
-        },
+        parameters: [
+          { name: 'selector', type: 'string' as const, description: 'CSS selector of the element to click', required: true }
+        ],
         execute: async ({ selector }: { selector: string }) => {
-          if (!this.page) return 'Browser not initialized. Navigate to a page first.';
+          if (!this.page) return { output: 'Browser not initialized. Navigate to a page first.', error: 'Browser not initialized' };
           
           try {
             await this.page.click(selector, { timeout: 5000 });
@@ -81,25 +73,21 @@ export class BrowserTools {
               input: selector
             });
             
-            return `Successfully clicked element: ${selector}`;
+            return { output: `Successfully clicked element: ${selector}` };
           } catch (error: unknown) {
-            return `Failed to click element: ${error instanceof Error ? error.message : String(error)}`;
+            return { output: `Failed to click element: ${error instanceof Error ? error.message : String(error)}`, error: error instanceof Error ? error.message : String(error) };
           }
         }
       },
       {
         name: 'fill_input',
         description: 'Fill an input field with text',
-        parameters: {
-          type: 'object',
-          properties: {
-            selector: { type: 'string', description: 'CSS selector of the input field' },
-            text: { type: 'string', description: 'Text to fill in the input' }
-          },
-          required: ['selector', 'text']
-        },
+        parameters: [
+          { name: 'selector', type: 'string' as const, description: 'CSS selector of the input field', required: true },
+          { name: 'text', type: 'string' as const, description: 'Text to fill in the input', required: true }
+        ],
         execute: async ({ selector, text }: { selector: string; text: string }) => {
-          if (!this.page) return 'Browser not initialized. Navigate to a page first.';
+          if (!this.page) return { output: 'Browser not initialized. Navigate to a page first.', error: 'Browser not initialized' };
           
           try {
             await this.page.fill(selector, text);
@@ -111,24 +99,20 @@ export class BrowserTools {
               input: `${selector} = ${text}`
             });
             
-            return `Successfully filled input ${selector} with text`;
+            return { output: `Successfully filled input ${selector} with text` };
           } catch (error: unknown) {
-            return `Failed to fill input: ${error instanceof Error ? error.message : String(error)}`;
+            return { output: `Failed to fill input: ${error instanceof Error ? error.message : String(error)}`, error: error instanceof Error ? error.message : String(error) };
           }
         }
       },
       {
         name: 'take_screenshot',
         description: 'Take a screenshot of the current page for evidence',
-        parameters: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'Name for the screenshot file' }
-          },
-          required: ['name']
-        },
+        parameters: [
+          { name: 'name', type: 'string' as const, description: 'Name for the screenshot file', required: true }
+        ],
         execute: async ({ name }: { name: string }) => {
-          if (!this.page) return 'Browser not initialized. Navigate to a page first.';
+          if (!this.page) return { output: 'Browser not initialized. Navigate to a page first.', error: 'Browser not initialized' };
           
           try {
             const filename = `${Date.now()}_${name}.png`;
@@ -142,39 +126,33 @@ export class BrowserTools {
               screenshot_path: path
             });
             
-            return `Screenshot saved: ${path}`;
+            return { output: `Screenshot saved: ${path}` };
           } catch (error: unknown) {
-            return `Failed to take screenshot: ${error instanceof Error ? error.message : String(error)}`;
+            return { output: `Failed to take screenshot: ${error instanceof Error ? error.message : String(error)}`, error: error instanceof Error ? error.message : String(error) };
           }
         }
       },
       {
         name: 'get_page_content',
         description: 'Get the text content of the current page',
-        parameters: {
-          type: 'object',
-          properties: {}
-        },
+        parameters: [],
         execute: async () => {
-          if (!this.page) return 'Browser not initialized. Navigate to a page first.';
+          if (!this.page) return { output: 'Browser not initialized. Navigate to a page first.', error: 'Browser not initialized' };
           
           try {
             const content = await this.page.textContent('body');
-            return content?.slice(0, 1000) || 'No content found';
+            return { output: content?.slice(0, 1000) || 'No content found' };
           } catch (error: unknown) {
-            return `Failed to get content: ${error instanceof Error ? error.message : String(error)}`;
+            return { output: `Failed to get content: ${error instanceof Error ? error.message : String(error)}`, error: error instanceof Error ? error.message : String(error) };
           }
         }
       },
       {
         name: 'check_console_errors',
         description: 'Check for JavaScript console errors on the page',
-        parameters: {
-          type: 'object',
-          properties: {}
-        },
+        parameters: [],
         execute: async () => {
-          if (!this.page) return 'Browser not initialized. Navigate to a page first.';
+          if (!this.page) return { output: 'Browser not initialized. Navigate to a page first.', error: 'Browser not initialized' };
           
           const errors: string[] = [];
           this.page.on('console', msg => {
@@ -186,9 +164,9 @@ export class BrowserTools {
           await this.page.waitForTimeout(2000);
           
           if (errors.length > 0) {
-            return `Found ${errors.length} console errors:\n${errors.join('\n')}`;
+            return { output: `Found ${errors.length} console errors:\n${errors.join('\n')}` };
           }
-          return 'No console errors detected';
+          return { output: 'No console errors detected' };
         }
       }
     ];

@@ -1,7 +1,7 @@
 import { ReActAgent } from '@orka-js/agent';
 import { OpenAIAdapter } from '@orka-js/openai';
 import { AnthropicAdapter } from '@orka-js/anthropic';
-import { SessionMemory } from '@orka-js/memory-store';
+import { Memory } from '@orka-js/memory-store';
 import { Tracer } from '@orka-js/observability';
 import { EventEmitter } from 'events';
 import { OpenQADatabase } from '../database/index.js';
@@ -72,7 +72,7 @@ export class OpenQAAgent extends EventEmitter {
     ];
 
     const llm = this.createLLMAdapter();
-    const memory = new SessionMemory({ maxMessages: 50 });
+    const memory = new Memory({ maxMessages: 50 });
     const tracer = new Tracer({ logLevel: 'info' });
 
     // Get enabled skills and generate skill prompt
@@ -117,8 +117,9 @@ Always provide clear, actionable information with steps to reproduce. Think step
     };
 
     this.agent = new ReActAgent({
+      goal: agentConfig.goal,
       tools: allTools,
-      maxIterations: cfg.agent.maxIterations,
+      maxSteps: cfg.agent.maxIterations,
       systemPrompt: agentConfig.systemPrompt
     }, llm, memory);
 
@@ -251,17 +252,22 @@ Always provide clear, actionable information with steps to reproduce. Think step
       });
     }
     // Try GitLab
-    else if (this.config.get('gitlab.token') && this.config.get('gitlab.project')) {
-      const [owner, repo] = (this.config.get('gitlab.project') || '').split('/');
-      this.gitListener = new GitListener({
-        provider: 'gitlab',
-        token: this.config.get('gitlab.token') || '',
-        owner,
-        repo,
-        branch: 'main',
-        pollIntervalMs: 60000,
-        gitlabUrl: this.config.get('gitlab.url') || 'https://gitlab.com'
-      });
+    else {
+      const gitlabToken = await this.config.get('gitlab.token');
+      const gitlabProject = await this.config.get('gitlab.project');
+      if (gitlabToken && gitlabProject) {
+        const [owner, repo] = gitlabProject.split('/');
+        const gitlabUrl = await this.config.get('gitlab.url');
+        this.gitListener = new GitListener({
+          provider: 'gitlab',
+          token: gitlabToken,
+          owner,
+          repo,
+          branch: 'main',
+          pollIntervalMs: 60000,
+          gitlabUrl: gitlabUrl || 'https://gitlab.com'
+        });
+      }
     }
 
     if (this.gitListener) {

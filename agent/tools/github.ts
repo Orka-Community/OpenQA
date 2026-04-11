@@ -22,20 +22,16 @@ export class GitHubTools {
       {
         name: 'create_github_issue',
         description: 'Create a GitHub issue when a critical bug is found. Use this for bugs that require developer attention.',
-        parameters: {
-          type: 'object',
-          properties: {
-            title: { type: 'string', description: 'Issue title (concise and descriptive)' },
-            body: { type: 'string', description: 'Detailed description with steps to reproduce' },
-            severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'], description: 'Bug severity' },
-            labels: { type: 'array', items: { type: 'string' }, description: 'Labels for the issue' },
-            screenshot_path: { type: 'string', description: 'Path to screenshot evidence' }
-          },
-          required: ['title', 'body', 'severity']
-        },
+        parameters: [
+          { name: 'title', type: 'string' as const, description: 'Issue title (concise and descriptive)', required: true },
+          { name: 'body', type: 'string' as const, description: 'Detailed description with steps to reproduce', required: true },
+          { name: 'severity', type: 'string' as const, description: 'Bug severity (low, medium, high, critical)', required: true },
+          { name: 'labels', type: 'string' as const, description: 'Comma-separated labels for the issue', required: false },
+          { name: 'screenshot_path', type: 'string' as const, description: 'Path to screenshot evidence', required: false }
+        ],
         execute: async ({ title, body, severity, labels = [], screenshot_path }: { title: string; body: string; severity: 'low' | 'medium' | 'high' | 'critical'; labels?: string[]; screenshot_path?: string }) => {
           if (!this.octokit || !this.config.owner || !this.config.repo) {
-            return 'GitHub not configured. Please set GITHUB_TOKEN, GITHUB_OWNER, and GITHUB_REPO.';
+            return { output: 'GitHub not configured. Please set GITHUB_TOKEN, GITHUB_OWNER, and GITHUB_REPO.', error: 'GitHub not configured' };
           }
 
           try {
@@ -81,9 +77,9 @@ ${screenshot_path ? `**Screenshot:** ${screenshot_path}` : ''}
               screenshot_path
             });
 
-            return `✅ GitHub issue created successfully!\nURL: ${issue.data.html_url}\nIssue #${issue.data.number}`;
+            return { output: `✅ GitHub issue created successfully!\nURL: ${issue.data.html_url}\nIssue #${issue.data.number}` };
           } catch (error: unknown) {
-            return `❌ Failed to create GitHub issue: ${error instanceof Error ? error.message : String(error)}`;
+            return { output: `❌ Failed to create GitHub issue: ${error instanceof Error ? error.message : String(error)}`, error: error instanceof Error ? error.message : String(error) };
           }
         }
       }
