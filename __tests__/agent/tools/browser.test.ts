@@ -67,10 +67,10 @@ describe('BrowserTools', () => {
     const toolDefs = tools.getTools();
     const navigateTool = toolDefs.find(t => t.name === 'navigate_to_page')!;
 
-    const result = await navigateTool.execute({ url: 'https://example.com' });
+    const result = await navigateTool.execute({ url: 'https://example.com' } as never);
 
-    expect(result).toContain('Successfully navigated');
-    expect(result).toContain('Test Page');
+    expect((result as { output: string }).output).toContain('Successfully navigated');
+    expect((result as { output: string }).output).toContain('Test Page');
     expect(mockPage.goto).toHaveBeenCalledWith('https://example.com', { waitUntil: 'networkidle' });
   });
 
@@ -80,12 +80,12 @@ describe('BrowserTools', () => {
     const toolDefs = tools.getTools();
 
     // Initialize browser first
-    await toolDefs.find(t => t.name === 'navigate_to_page')!.execute({ url: 'https://example.com' });
+    await toolDefs.find(t => t.name === 'navigate_to_page')!.execute({ url: 'https://example.com' } as never);
 
     const clickTool = toolDefs.find(t => t.name === 'click_element')!;
-    const result = await clickTool.execute({ selector: '#submit' });
+    const result = await clickTool.execute({ selector: '#submit' } as never);
 
-    expect(result).toContain('Successfully clicked');
+    expect((result as { output: string }).output).toContain('Successfully clicked');
     expect(mockPage.click).toHaveBeenCalledWith('#submit', { timeout: 5000 });
   });
 
@@ -95,8 +95,8 @@ describe('BrowserTools', () => {
     const toolDefs = tools.getTools();
     const clickTool = toolDefs.find(t => t.name === 'click_element')!;
 
-    const result = await clickTool.execute({ selector: '#btn' });
-    expect(result).toContain('Browser not initialized');
+    const result = await clickTool.execute({ selector: '#btn' } as never);
+    expect((result as { output: string }).output).toContain('Browser not initialized');
   });
 
   it('should get page content', async () => {
@@ -105,12 +105,12 @@ describe('BrowserTools', () => {
     const toolDefs = tools.getTools();
 
     // Initialize
-    await toolDefs.find(t => t.name === 'navigate_to_page')!.execute({ url: 'https://example.com' });
+    await toolDefs.find(t => t.name === 'navigate_to_page')!.execute({ url: 'https://example.com' } as never);
 
     const contentTool = toolDefs.find(t => t.name === 'get_page_content')!;
-    const result = await contentTool.execute({});
+    const result = await contentTool.execute({} as never);
 
-    expect(result).toBe('Hello World');
+    expect((result as { output: string }).output).toBe('Hello World');
   });
 
   it('should close browser', async () => {
@@ -119,7 +119,7 @@ describe('BrowserTools', () => {
     const toolDefs = tools.getTools();
 
     // Initialize
-    await toolDefs.find(t => t.name === 'navigate_to_page')!.execute({ url: 'https://example.com' });
+    await toolDefs.find(t => t.name === 'navigate_to_page')!.execute({ url: 'https://example.com' } as never);
 
     await tools.close();
     expect(mockBrowser.close).toHaveBeenCalled();

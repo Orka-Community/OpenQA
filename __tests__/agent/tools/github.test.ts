@@ -47,7 +47,7 @@ describe('GitHubTools', () => {
       severity: 'high',
     });
 
-    expect(result).toContain('GitHub not configured');
+    expect(result.output).toContain('GitHub not configured');
   });
 
   it('should create an issue when configured', async () => {
@@ -68,8 +68,8 @@ describe('GitHubTools', () => {
       labels: ['frontend'],
     });
 
-    expect(result).toContain('GitHub issue created successfully');
-    expect(result).toContain('#42');
+    expect(result.output).toContain('GitHub issue created successfully');
+    expect(result.output).toContain('#42');
 
     // Verify bug was stored in DB
     const bugs = await db.getAllBugs();

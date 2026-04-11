@@ -42,10 +42,10 @@ describe('KanbanTools', () => {
       priority: 'high',
       column: 'to-do',
       tags: ['ui'],
-    });
+    } as never);
 
-    expect(result).toContain('Kanban ticket created successfully');
-    expect(result).toContain('Column: to-do');
+    expect((result as { output: string }).output).toContain('Kanban ticket created successfully');
+    expect((result as { output: string }).output).toContain('Column: to-do');
 
     const tickets = await db.getKanbanTickets();
     expect(tickets).toHaveLength(1);
@@ -66,9 +66,9 @@ describe('KanbanTools', () => {
     const result = await updateTool.execute({
       ticket_id: ticket.id,
       column: 'in-progress',
-    });
+    } as never);
 
-    expect(result).toContain('updated successfully');
+    expect((result as { output: string }).output).toContain('updated successfully');
 
     const updated = (await db.getKanbanTickets()).find(t => t.id === ticket.id);
     expect(updated!.column).toBe('in-progress');
@@ -82,10 +82,10 @@ describe('KanbanTools', () => {
     const toolDefs = tools.getTools();
     const boardTool = toolDefs.find(t => t.name === 'get_kanban_board')!;
 
-    const result = await boardTool.execute({});
+    const result = await boardTool.execute({} as never);
 
-    expect(result).toContain('Backlog: 1 tickets');
-    expect(result).toContain('To Do: 2 tickets');
-    expect(result).toContain('Total: 3 tickets');
+    expect((result as { output: string }).output).toContain('Backlog: 1 tickets');
+    expect((result as { output: string }).output).toContain('To Do: 2 tickets');
+    expect((result as { output: string }).output).toContain('Total: 3 tickets');
   });
 });
