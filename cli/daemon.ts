@@ -5,12 +5,14 @@ import { WebSocketServer } from 'ws';
 import { OpenQADatabase } from '../database/index.js';
 import { createApiRouter } from './routes.js';
 import { createAuthRouter } from './auth/router.js';
+import { createEnvRouter } from './env-routes.js';
 import { requireAuth, authOrRedirect } from './auth/middleware.js';
 import { getDashboardHTML } from './dashboard.html.js';
 import { getConfigHTML } from './config.html.js';
 import { getKanbanHTML } from './kanban.html.js';
 import { getLoginHTML } from './login.html.js';
 import { getSetupHTML } from './setup.html.js';
+import { getEnvHTML } from './env.html.js';
 import { logger } from '../agent/logger.js';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
@@ -127,6 +129,9 @@ let agent: OpenQAAgentV2 | null = null;
 // Auth routes (login, logout, me, change-password, setup, accounts) — before API guard
 app.use(createAuthRouter(db));
 
+// Env routes (environment variables management) — requires auth
+app.use(createEnvRouter());
+
 // Guard: all /api/* except the public auth endpoints
 app.use('/api', (req: Request, res: Response, next: NextFunction) => {
   const PUBLIC_PATHS = ['/auth/login', '/auth/logout', '/setup'];
@@ -158,6 +163,10 @@ app.get('/', authOrRedirect(db), (_req, res) => {
 
 app.get('/config', authOrRedirect(db), (_req, res) => {
   res.send(getConfigHTML(cfg));
+});
+
+app.get('/config/env', authOrRedirect(db), (_req, res) => {
+  res.send(getEnvHTML());
 });
 
 app.get('/kanban', authOrRedirect(db), (_req, res) => {

@@ -1,0 +1,53 @@
+# Render Blueprint for OpenQA
+# Deploy: Connect GitHub repo to Render and it will auto-detect this file
+
+services:
+  - type: web
+    name: openqa
+    runtime: node
+    plan: starter  # or standard, pro
+    region: frankfurt  # or oregon, singapore, etc.
+    
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/cli/index.js start
+    
+    envVars:
+      - key: NODE_ENV
+        value: production
+      
+      - key: WEB_PORT
+        value: 10000  # Render uses port 10000
+      
+      - key: WEB_HOST
+        value: 0.0.0.0
+      
+      # LLM Configuration (set in Render dashboard)
+      - key: LLM_PROVIDER
+        sync: false
+      
+      - key: OPENAI_API_KEY
+        sync: false
+      
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      
+      # Security (CRITICAL - set in Render dashboard)
+      - key: OPENQA_JWT_SECRET
+        generateValue: true  # Auto-generate on first deploy
+      
+      # Target Application
+      - key: SAAS_URL
+        sync: false
+      
+      # Database path
+      - key: DB_PATH
+        value: /opt/render/project/data/openqa.db
+    
+    disk:
+      name: openqa-data
+      mountPath: /opt/render/project/data
+      sizeGB: 1
+    
+    healthCheckPath: /api/health
+    
+    autoDeploy: true

@@ -50,11 +50,29 @@ OpenQA is a **truly autonomous** QA testing agent that thinks, codes, and execut
 
 ## 🚀 Quick Start
 
-### One-Line Installation
+### Development (Local)
 
 ```bash
+# One-line installation
 curl -fsSL https://openqa.orkajs.com/install.sh | bash
+
+# Or via npm
+npx @openqa/cli start
 ```
+
+### Production Deployment
+
+```bash
+# Interactive production installer
+curl -fsSL https://openqa.orkajs.com/install-production.sh | bash
+```
+
+**Supports:**
+- 🐳 **Docker** (recommended)
+- 🖥️ **VPS/Bare Metal** (Ubuntu/Debian with systemd)
+- ☁️ **Cloud Platforms** (Railway, Render, Fly.io)
+
+📖 **[Full Deployment Guide](./DEPLOYMENT.md)** - Complete production setup instructions
 
 ### Configure Your SaaS (3 lines!)
 
@@ -105,9 +123,68 @@ openqa start --daemon
 
 Once started, open your browser:
 
-- **DevTools**: http://localhost:3000 - Monitor agent activity in real-time
-- **Kanban**: http://localhost:3000/kanban - View and manage QA tickets
-- **Config**: http://localhost:3000/config - Configure OpenQA settings
+- **Dashboard**: http://localhost:4242 - Main dashboard with real-time monitoring
+- **Kanban**: http://localhost:4242/kanban - View and manage QA tickets
+- **Config**: http://localhost:4242/config - Configure OpenQA settings
+
+### 🔐 Dashboard Authentication
+
+OpenQA includes a secure authentication system to protect your dashboard:
+
+#### First-Time Setup
+
+On first launch, you'll be redirected to `/setup` to create an admin account:
+
+1. Visit http://localhost:4242
+2. Create your admin username and password (min 8 characters)
+3. You'll be automatically logged in
+
+#### Login
+
+After setup, access the dashboard at http://localhost:4242/login with your credentials.
+
+#### User Management (Admin Only)
+
+Admins can manage users via the API:
+
+```bash
+# List all users
+curl http://localhost:4242/api/accounts \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Create a viewer account
+curl -X POST http://localhost:4242/api/accounts \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "viewer1", "password": "securepass123", "role": "viewer"}'
+
+# Change password
+curl -X POST http://localhost:4242/api/auth/change-password \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"currentPassword": "old", "newPassword": "newsecure123"}'
+```
+
+**Roles:**
+- **admin** - Full access (manage users, configure, run tests)
+- **viewer** - Read-only access (view tests, bugs, sessions)
+
+**Security Features:**
+- JWT-based authentication with httpOnly cookies
+- Scrypt password hashing
+- Rate limiting on auth endpoints
+- CSRF protection via SameSite cookies
+
+#### Disable Authentication (Development Only)
+
+For local development, you can disable authentication:
+
+```bash
+export OPENQA_AUTH_DISABLED=true
+openqa start
+```
+
+⚠️ **Never disable authentication in production!**
 
 ### CLI Commands
 
@@ -330,7 +407,127 @@ curl -X POST http://localhost:3000/api/brain/analyze
 # }
 ```
 
-### Docker Deployment
+## 🚀 Production Deployment
+
+### Quick Deploy (5 minutes)
+
+```bash
+# Interactive installer - Choose Docker, VPS, or Cloud
+curl -fsSL https://openqa.orkajs.com/install-production.sh | bash
+```
+
+### Deployment Options
+
+| Method | Time | Difficulty | Best For |
+|--------|------|------------|----------|
+| 🐳 **Docker** | 5 min | Easy | VPS, Local servers |
+| 🖥️ **VPS/Systemd** | 15 min | Medium | Full control |
+| ☁️ **Railway** | 3 min | Easiest | Quick deploy |
+| 🎨 **Render** | 2 min | Easiest | Free tier |
+| 🪰 **Fly.io** | 5 min | Easy | Global edge |
+
+### Docker (Recommended)
+
+```bash
+# 1. Clone and configure
+git clone https://github.com/Orka-Community/OpenQA.git
+cd OpenQA
+cp .env.production .env
+
+# 2. Edit .env - Add your API keys
+nano .env
+# Required: OPENAI_API_KEY, OPENQA_JWT_SECRET, SAAS_URL
+
+# 3. Start with Docker Compose
+docker-compose -f docker-compose.production.yml up -d
+
+# 4. Access at http://localhost:4242
+```
+
+**With HTTPS (Nginx):**
+```bash
+# Update nginx.conf with your domain
+nano nginx.conf
+
+# Get SSL certificate
+sudo certbot certonly --standalone -d your-domain.com
+
+# Start with Nginx
+docker-compose -f docker-compose.production.yml --profile with-nginx up -d
+```
+
+### Cloud Platforms
+
+**Railway:**
+```bash
+railway init && railway up
+# Set env vars in dashboard: OPENAI_API_KEY, OPENQA_JWT_SECRET, SAAS_URL
+```
+
+**Render:**
+- Fork repo → Connect to Render → Auto-deploys with `render.yaml`
+
+**Fly.io:**
+```bash
+flyctl launch
+flyctl secrets set OPENAI_API_KEY=sk-xxx OPENQA_JWT_SECRET=$(openssl rand -hex 32)
+flyctl deploy
+```
+
+### VPS/Bare Metal
+
+```bash
+# Automated installer
+curl -fsSL https://openqa.orkajs.com/install-production.sh | bash
+# Choose option 2 (VPS/Bare Metal)
+```
+
+**Manual installation:**
+```bash
+# Install Node.js 20
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs build-essential git
+
+# Install OpenQA
+sudo useradd -r -m openqa
+sudo -u openqa git clone https://github.com/Orka-Community/OpenQA.git /opt/openqa
+cd /opt/openqa
+sudo -u openqa npm ci --only=production
+sudo -u openqa npm run build
+
+# Configure
+sudo -u openqa cp .env.production .env
+sudo nano /opt/openqa/.env
+
+# Install systemd service
+sudo cp openqa.service /etc/systemd/system/
+sudo systemctl enable openqa
+sudo systemctl start openqa
+```
+
+### 🔒 Security Checklist
+
+Before going live:
+
+- [ ] Set strong `OPENQA_JWT_SECRET` (generate: `openssl rand -hex 32`)
+- [ ] Use strong admin password (min 12 chars)
+- [ ] Enable HTTPS (SSL certificate)
+- [ ] Never set `OPENQA_AUTH_DISABLED=true` in production
+- [ ] Set `NODE_ENV=production`
+- [ ] Restrict CORS origins
+- [ ] Enable firewall (ports 80, 443 only)
+- [ ] Setup automated backups
+
+### 📚 Deployment Documentation
+
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Complete deployment guide
+- **[QUICKSTART-PRODUCTION.md](./QUICKSTART-PRODUCTION.md)** - 5-minute quick start
+- **[Docker Compose](./docker-compose.production.yml)** - Production configuration
+- **[Systemd Service](./openqa.service)** - Service configuration
+
+### Development Deployment
+
+For local development only:
 
 ```bash
 docker-compose up -d

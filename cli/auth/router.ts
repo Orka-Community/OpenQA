@@ -26,7 +26,7 @@ const loginSchema = z.object({
 });
 
 const setupSchema = z.object({
-  username: z.string().min(3).max(50).regex(/^[a-z0-9_]+$/, 'Only lowercase letters, digits and underscores'),
+  username: z.string().min(3).max(100).regex(/^[a-z0-9_.@-]+$/, 'Only lowercase letters, digits, and ._@- characters'),
   password: z.string().min(8).max(200),
 });
 
@@ -36,7 +36,7 @@ const changePasswordSchema = z.object({
 });
 
 const createUserSchema = z.object({
-  username: z.string().min(3).max(50).regex(/^[a-z0-9_]+$/, 'Only lowercase letters, digits and underscores'),
+  username: z.string().min(3).max(100).regex(/^[a-z0-9_.@-]+$/, 'Only lowercase letters, digits, and ._@- characters'),
   password: z.string().min(8).max(200),
   role: z.enum(['admin', 'viewer']),
 });

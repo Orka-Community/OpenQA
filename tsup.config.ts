@@ -8,7 +8,10 @@ export default defineConfig([
       'cli/daemon': 'cli/daemon.ts',
       'cli/dashboard.html': 'cli/dashboard.html.ts',
       'cli/config.html': 'cli/config.html.ts',
-      'cli/kanban.html': 'cli/kanban.html.ts'
+      'cli/kanban.html': 'cli/kanban.html.ts',
+      'cli/env.html': 'cli/env.html.ts',
+      'cli/env-routes': 'cli/env-routes.ts',
+      'cli/env-config': 'cli/env-config.ts'
     },
     format: ['esm'],
     dts: false,

@@ -126,9 +126,9 @@ export function getSetupHTML(): string {
 
     <form id="setupForm">
       <div class="field">
-        <label for="username">Username</label>
-        <input type="text" id="username" name="username" autocomplete="username" autofocus required pattern="[a-z0-9_]+" title="Lowercase letters, digits and underscores only">
-        <div class="hint">Lowercase letters, digits and underscores only</div>
+        <label for="username">Username or Email</label>
+        <input type="text" id="username" name="username" autocomplete="username" autofocus required pattern="[a-z0-9_.@-]+" title="Lowercase letters, digits, and ._@- characters">
+        <div class="hint">Use your email or a username (lowercase, digits, ._@- allowed)</div>
       </div>
       <div class="field">
         <label for="password">Password</label>

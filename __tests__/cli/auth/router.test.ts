@@ -46,6 +46,20 @@ describe('auth router', () => {
       const res = await request(app).post('/api/setup').send({ username: 'Admin User!', password: 'password123' });
       expect(res.status).toBe(400);
     });
+
+    it('accepts email addresses as username', async () => {
+      const { app } = makeApp();
+      const res = await request(app).post('/api/setup').send({ username: 'user@example.com', password: 'password123' });
+      expect(res.status).toBe(200);
+      expect(res.body.user.username).toBe('user@example.com');
+    });
+
+    it('accepts usernames with dots and hyphens', async () => {
+      const { app } = makeApp();
+      const res = await request(app).post('/api/setup').send({ username: 'john.doe-admin', password: 'password123' });
+      expect(res.status).toBe(200);
+      expect(res.body.user.username).toBe('john.doe-admin');
+    });
   });
 
   describe('POST /api/auth/login', () => {

@@ -20,8 +20,9 @@ check_dependencies() {
     fi
     
     NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-    if [ "$NODE_VERSION" -lt 18 ]; then
-        echo "❌ Node.js version must be 18 or higher (found: $(node -v))"
+    if [ "$NODE_VERSION" -lt 20 ]; then
+        echo "❌ Node.js version must be 20 or higher (found: $(node -v))"
+        echo "   Please install Node.js 20+ from https://nodejs.org"
         exit 1
     fi
     
@@ -53,9 +54,9 @@ download_openqa() {
     mkdir -p "$INSTALL_DIR"
     
     if [ "$VERSION" = "latest" ]; then
-        DOWNLOAD_URL="https://github.com/orka-js/openqa/archive/refs/heads/main.tar.gz"
+        DOWNLOAD_URL="https://github.com/Orka-Community/OpenQA/archive/refs/heads/main.tar.gz"
     else
-        DOWNLOAD_URL="https://github.com/orka-js/openqa/archive/refs/tags/v${VERSION}.tar.gz"
+        DOWNLOAD_URL="https://github.com/Orka-Community/OpenQA/archive/refs/tags/v${VERSION}.tar.gz"
     fi
     
     if command -v curl &> /dev/null; then
@@ -137,18 +138,26 @@ print_success() {
     echo "🚀 Next steps:"
     echo ""
     echo "1. Configure OpenQA:"
-    echo "   Edit $INSTALL_DIR/.env"
-    echo "   Or use: openqa config set <key> <value>"
+    echo "   Edit $INSTALL_DIR/.env with your API keys"
+    echo "   Or use the web interface after starting"
     echo ""
     echo "2. Start OpenQA:"
     echo "   openqa start"
     echo ""
     echo "3. Access web interfaces:"
-    echo "   DevTools: http://localhost:3000"
-    echo "   Kanban:   http://localhost:3000/kanban"
-    echo "   Config:   http://localhost:3000/config"
+    echo "   Dashboard:    http://localhost:4242"
+    echo "   Kanban:       http://localhost:4242/kanban"
+    echo "   Config:       http://localhost:4242/config"
+    echo "   Environment:  http://localhost:4242/config/env"
     echo ""
-    echo "📖 Documentation: https://github.com/orka-js/openqa"
+    echo "4. First-time setup:"
+    echo "   Visit http://localhost:4242/setup"
+    echo "   Create your admin account"
+    echo ""
+    echo "📖 Documentation: https://github.com/Orka-Community/OpenQA"
+    echo "💬 Discord: https://discord.com/invite/DScfpuPysP"
+    echo ""
+    echo "⚠️  Security: Never disable authentication in production!"
     echo ""
 }
 

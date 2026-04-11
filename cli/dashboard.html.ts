@@ -741,6 +741,9 @@ export function getDashboardHTML(): string {
       <a class="nav-item" href="/config">
         <span class="icon">⚙</span> Config
       </a>
+      <a class="nav-item" href="/config/env">
+        <span class="icon">🔧</span> Environment
+      </a>
     </div>
 
     <div class="sidebar-footer">

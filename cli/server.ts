@@ -1,12 +1,20 @@
 import { ConfigManager } from '../agent/config/index.js';
-import express from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import { WebSocketServer } from 'ws';
 import { OpenQADatabase } from '../database/index.js';
 import { createApiRouter } from './routes.js';
+import { createAuthRouter } from './auth/router.js';
+import { createEnvRouter } from './env-routes.js';
+import { requireAuth, authOrRedirect } from './auth/middleware.js';
 import { getDashboardHTML } from './dashboard.html.js';
 import { getKanbanHTML } from './kanban.html.js';
 import { getConfigHTML } from './config.html.js';
+import { getLoginHTML } from './login.html.js';
+import { getSetupHTML } from './setup.html.js';
+import { getEnvHTML } from './env.html.js';
 import chalk from 'chalk';
+import rateLimit from 'express-rate-limit';
+import cors from 'cors';
 
 export async function startWebServer() {
   const config = new ConfigManager();
@@ -14,9 +22,56 @@ export async function startWebServer() {
   const db = new OpenQADatabase('./data/openqa.json');
 
   const app = express();
-  app.use(express.json());
+
+  // CORS — allow configurable origins via env
+  const allowedOrigins = (process.env.CORS_ORIGINS || `http://localhost:${cfg.web.port}`).split(',');
+  app.use(cors({
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+        cb(null, true);
+      } else {
+        cb(new Error(`CORS: origin ${origin} not allowed`));
+      }
+    },
+    credentials: true,
+  }));
+
+  app.use(express.json({ limit: '1mb' }));
+
+  // Global API rate limit: 300 req/min per IP
+  const apiLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later.' },
+  });
+  app.use('/api/', apiLimiter);
+
+  // Stricter limit on mutation endpoints: 30 req/min
+  const mutationLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please slow down.' },
+  });
+  app.use(['/api/start', '/api/stop', '/api/auth/login'], mutationLimiter);
 
   const wss = new WebSocketServer({ noServer: true });
+
+  // Auth routes (login, logout, me, change-password, setup, accounts) — before API guard
+  app.use(createAuthRouter(db));
+
+  // Env routes (environment variables management) — requires auth
+  app.use(createEnvRouter());
+
+  // Guard: all /api/* except the public auth endpoints
+  app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+    const PUBLIC_PATHS = ['/auth/login', '/auth/logout', '/setup', '/health'];
+    if (PUBLIC_PATHS.some(p => req.path === p || req.path.startsWith(p + '/'))) return next();
+    return requireAuth(req, res, next);
+  });
 
   // Shared data routes (sessions, bugs, kanban, config, health)
   app.use(createApiRouter(db, config));
@@ -120,17 +175,34 @@ export async function startWebServer() {
     }
   });
 
-  // Professional Dashboard with Charts and Agent Hierarchy
-  app.get('/', (req, res) => {
+  // Public pages
+  app.get('/login', async (_req, res) => {
+    const count = await db.countUsers();
+    if (count === 0) return res.redirect('/setup');
+    res.send(getLoginHTML());
+  });
+
+  app.get('/setup', async (_req, res) => {
+    const count = await db.countUsers();
+    if (count > 0) return res.redirect('/login');
+    res.send(getSetupHTML());
+  });
+
+  // Protected HTML pages
+  app.get('/', authOrRedirect(db), (_req, res) => {
     res.send(getDashboardHTML());
   });
 
-  app.get('/kanban', (req, res) => {
+  app.get('/kanban', authOrRedirect(db), (_req, res) => {
     res.send(getKanbanHTML());
   });
 
-  app.get('/config', (req, res) => {
+  app.get('/config', authOrRedirect(db), (_req, res) => {
     res.send(getConfigHTML(config.getConfigSync()));
+  });
+
+  app.get('/config/env', authOrRedirect(db), (_req, res) => {
+    res.send(getEnvHTML());
   });
 
   const server = app.listen(cfg.web.port, cfg.web.host, () => {
@@ -140,6 +212,7 @@ export async function startWebServer() {
     console.log(chalk.white(`  Dashboard: http://localhost:${cfg.web.port}`));
     console.log(chalk.white(`  Kanban: http://localhost:${cfg.web.port}/kanban`));
     console.log(chalk.white(`  Config: http://localhost:${cfg.web.port}/config`));
+    console.log(chalk.white(`  Env Variables: http://localhost:${cfg.web.port}/config/env`));
     console.log(chalk.gray('\nPress Ctrl+C to stop\n'));
     
     if (!cfg.agent.autoStart) {
