@@ -20,41 +20,34 @@ LABEL org.opencontainers.image.title="OpenQA" \
 
 WORKDIR /app
 
-# Patch all Alpine packages (eliminates CVEs from already-fixed packages)
-# Install only the minimal system libs needed by Playwright's Chromium
-RUN apk upgrade --no-cache && \
-    apk add --no-cache \
-      # Playwright Chromium runtime deps
-      nss \
-      freetype \
-      harfbuzz \
-      ca-certificates \
-      ttf-freefont \
-      font-noto-emoji \
-      # Sandbox / seccomp support
-      libstdc++ \
-      chromium-swiftshader
+# 1. Patch ALL Alpine packages (fixes musl, openssl, zlib, busybox CVEs)
+#    Must run BEFORE any apk add so new packages are also at latest
+RUN apk upgrade --no-cache
 
-# Tell Playwright to use the system Chromium path
-# (Playwright bundles its own binary via `playwright install` — done below)
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
+# 2. Only the minimal libs required by Playwright's Chromium at runtime
+#    ⚠️  No `apk add chromium` — we use Playwright's own binary instead
+RUN apk add --no-cache \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
 
-# Install production deps (includes playwright package)
+# 3. Production deps (includes the `playwright` npm package)
 COPY package*.json ./
 RUN npm ci --production
 
-# Let Playwright download its own, more up-to-date Chromium binary
-# (avoids the CVE-laden Alpine chromium package entirely)
-RUN npx playwright install --with-deps chromium 2>/dev/null || \
-    npx playwright install chromium
+# 4. Let Playwright download its own Chromium binary (kept up-to-date by Microsoft,
+#    not the outdated Alpine chromium package which carries the critical CVEs)
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npx playwright install chromium
 
-# Copy compiled output from builder
+# 5. Copy compiled app
 COPY --from=builder /app/dist ./dist
 
-# Run as non-root for defense-in-depth
+# 6. Drop root — run as unprivileged user (defense-in-depth)
 RUN addgroup -S openqa && adduser -S openqa -G openqa && \
-    chown -R openqa:openqa /app /ms-playwright 2>/dev/null || true
+    chown -R openqa:openqa /app /ms-playwright
 USER openqa
 
 EXPOSE 3000
