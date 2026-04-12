@@ -6,3 +6,4 @@ data/
 *.pid
 .DS_Store
 screenshots/
+Dockerfile.production
