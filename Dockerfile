@@ -50,6 +50,9 @@ RUN addgroup -S openqa && adduser -S openqa -G openqa && \
     chown -R openqa:openqa /app /ms-playwright
 USER openqa
 
-EXPOSE 3000
+# 7. Configurable port (default: 4242)
+ENV WEB_PORT=4242
+ENV WEB_HOST=0.0.0.0
+EXPOSE ${WEB_PORT}
 
 CMD ["node", "dist/cli/daemon.js"]

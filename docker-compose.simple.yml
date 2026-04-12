@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  openqa:
+    image: orkalab/openqa:latest
+    platform: linux/amd64
+    container_name: openqa
+    restart: unless-stopped
+    ports:
+      - "${EXTERNAL_PORT:-4242}:${INTERNAL_PORT:-4242}"
+    environment:
+      # Node Environment
+      - NODE_ENV=production
+      
+      # LLM Configuration (REQUIRED)
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o}
+      
+      # Security (REQUIRED for production)
+      - OPENQA_JWT_SECRET=${OPENQA_JWT_SECRET}
+      
+      # Target SaaS Application
+      - SAAS_URL=${SAAS_URL}
+      - SAAS_AUTH_TYPE=${SAAS_AUTH_TYPE:-none}
+      - SAAS_USERNAME=${SAAS_USERNAME:-}
+      - SAAS_PASSWORD=${SAAS_PASSWORD:-}
+      
+      # GitHub Integration (Optional)
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_OWNER=${GITHUB_OWNER:-}
+      - GITHUB_REPO=${GITHUB_REPO:-}
+      
+      # GitLab Integration (Optional)
+      - GITLAB_TOKEN=${GITLAB_TOKEN:-}
+      - GITLAB_PROJECT=${GITLAB_PROJECT:-}
+      - GITLAB_URL=${GITLAB_URL:-https://gitlab.com}
+      
+      # Agent Behavior
+      - AGENT_INTERVAL_MS=${AGENT_INTERVAL_MS:-3600000}
+      - AGENT_MAX_ITERATIONS=${AGENT_MAX_ITERATIONS:-20}
+      - AGENT_AUTO_START=${AGENT_AUTO_START:-true}
+      
+      # Web Server (port inside container)
+      - WEB_PORT=${INTERNAL_PORT:-4242}
+      - WEB_HOST=0.0.0.0
+      
+      # Notifications (Optional)
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+    
+    volumes:
+      - openqa_data:/app/data
+    
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:$${WEB_PORT:-4242}/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    networks:
+      - openqa_network
+
+volumes:
+  openqa_data:
+    driver: local
+
+networks:
+  openqa_network:
+    driver: bridge
