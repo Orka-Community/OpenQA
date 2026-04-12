@@ -36,7 +36,8 @@ RUN apk add --no-cache \
     harfbuzz \
     ca-certificates \
     ttf-freefont \
-    dumb-init
+    dumb-init \
+    su-exec
 
 # Create non-root user
 RUN addgroup -g 1001 -S openqa && \

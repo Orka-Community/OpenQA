@@ -1,17 +1,16 @@
 #!/bin/sh
 # Docker entrypoint script - fixes permissions and starts app
+# Runs as root initially, then drops to openqa user
 
 # Fix permissions on data directory (crucial for Docker volumes)
-if [ -d "/app/data" ]; then
-    chmod 777 /app/data
-fi
-
-# Create data directory if it doesn't exist with proper permissions
 mkdir -p /app/data
 chmod 777 /app/data
+chown -R openqa:openqa /app/data 2>/dev/null || true
 
-# Ensure the database file can be created
-# LowDB/SQLite need write access to the directory
+# Also fix permissions on dist (needed for some operations)
+chown -R openqa:openqa /app/dist 2>/dev/null || true
 
-# Execute the main command
-exec "$@"
+# Execute the main command as openqa user
+# This ensures the app runs securely, not as root
+exec su-exec openqa "$@"
+
