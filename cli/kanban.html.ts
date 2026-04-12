@@ -44,7 +44,7 @@ export function getKanbanHTML(): string {
     .header { background: var(--white); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
     .header-left { display: flex; align-items: center; gap: 24px; }
     .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); }
-    .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, var(--orange), #fb923c); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    .logo-icon { width: 36px; height: 36px; background: transparent; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
     .logo-text { font-weight: 700; font-size: 20px; }
     .nav-tabs { display: flex; gap: 4px; }
     .nav-tab { padding: 8px 16px; border-radius: 8px; color: var(--text-2); text-decoration: none; font-weight: 500; transition: all 0.15s; }
@@ -171,8 +171,9 @@ export function getKanbanHTML(): string {
 <header class="header">
   <div class="header-left">
     <a href="/" class="logo">
-      <div class="logo-icon">🔬</div>
-      <span class="logo-text">OpenQA</span>
+      <div class="logo-icon">
+       <img src="https://openqa.orkajs.com/_next/image?url=https%3A%2F%2Forkajs.com%2Floutre-orka-qa.png&w=256&q=75" alt="OpenQA Logo" style="width: 40px; height: 40px;">
+      </div>
     </a>
     <nav class="nav-tabs">
       <a href="/" class="nav-tab">Dashboard</a>

@@ -13,6 +13,11 @@ import { getKanbanHTML } from './kanban.html.js';
 import { getLoginHTML } from './login.html.js';
 import { getSetupHTML } from './setup.html.js';
 import { getEnvHTML } from './env.html.js';
+import { getSessionsHTML } from './sessions.html.js';
+import { getIssuesHTML } from './issues.html.js';
+import { getTestsHTML } from './tests.html.js';
+import { getCoverageHTML } from './coverage.html.js';
+import { getLogsHTML } from './logs.html.js';
 import { logger } from '../agent/logger.js';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
@@ -178,6 +183,26 @@ app.get('/kanban', authOrRedirect(db), (_req, res) => {
   res.send(getKanbanHTML());
 });
 
+app.get('/sessions', authOrRedirect(db), (_req, res) => {
+  res.send(getSessionsHTML());
+});
+
+app.get('/issues', authOrRedirect(db), (_req, res) => {
+  res.send(getIssuesHTML());
+});
+
+app.get('/tests', authOrRedirect(db), (_req, res) => {
+  res.send(getTestsHTML());
+});
+
+app.get('/coverage', authOrRedirect(db), (_req, res) => {
+  res.send(getCoverageHTML());
+});
+
+app.get('/logs', authOrRedirect(db), (_req, res) => {
+  res.send(getLogsHTML());
+});
+
 // Override /api/status with agent-aware version
 app.get('/api/status', (_req, res) => {
   const status = agent?.getStats() || { isRunning: false };
@@ -189,9 +214,20 @@ app.post('/api/agent/start', async (_req, res) => {
     return res.status(400).json({ error: 'Agent already running' });
   }
 
-  const a = ensureAgent();
-  a.runAutonomous().catch(console.error);
-  res.json({ success: true });
+  try {
+    const saasConfig = await db.getConfig('saas_config');
+    if (!saasConfig) {
+      return res.status(400).json({ error: 'SaaS not configured. Please configure target URL first.' });
+    }
+
+    const config = JSON.parse(saasConfig);
+    const a = ensureAgent();
+    a.configureSaaS(config); // Configure SaaS before running
+    a.runAutonomous().catch(console.error);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
 });
 
 app.post('/api/agent/stop', (_req, res) => {
@@ -500,7 +536,14 @@ function broadcast(message: Record<string, unknown>) {
 (async () => {
   const saasConfig = await db.getConfig('saas_config');
   if (cfg.agent?.autoStart && saasConfig) {
-    ensureAgent().runAutonomous().catch((e) => logger.error('Auto-start failed', { error: e instanceof Error ? e.message : String(e) }));
+    try {
+      const config = JSON.parse(saasConfig);
+      const a = ensureAgent();
+      a.configureSaaS(config); // Configure SaaS before running
+      a.runAutonomous().catch((e) => logger.error('Auto-start failed', { error: e instanceof Error ? e.message : String(e) }));
+    } catch (e) {
+      logger.error('Failed to parse or configure SaaS', { error: e instanceof Error ? e.message : String(e) });
+    }
   }
 })();
 

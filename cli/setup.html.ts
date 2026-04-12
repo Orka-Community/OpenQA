@@ -114,8 +114,9 @@ export function getSetupHTML(): string {
 <body>
   <div class="card">
     <div class="logo">
-      <div class="logo-mark">Q</div>
-      <span class="logo-text">OpenQA</span>
+      <div class="logo-mark">
+       <img src="https://openqa.orkajs.com/_next/image?url=https%3A%2F%2Forkajs.com%2Floutre-orka-qa.png&w=256&q=75" alt="OpenQA Logo" style="width: 40px; height: 40px;">
+      </div>
     </div>
     <div class="badge">FIRST RUN</div>
     <h1>Create admin account</h1>

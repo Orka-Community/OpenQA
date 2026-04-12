@@ -51,8 +51,8 @@ export function getLoginHTML(opts?: { error?: string }): string {
       justify-content: center;
     }
     .logo-mark {
-      width: 36px; height: 36px;
-      background: var(--accent);
+      width: 100px; height: 100px;
+      background: transparent;
       border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
       font-size: 18px; font-weight: 800; color: #fff;
@@ -108,8 +108,9 @@ export function getLoginHTML(opts?: { error?: string }): string {
 <body>
   <div class="card">
     <div class="logo">
-      <div class="logo-mark">Q</div>
-      <span class="logo-text">OpenQA</span>
+      <span class="logo-mark">
+      <img src="https://openqa.orkajs.com/_next/image?url=https%3A%2F%2Forkajs.com%2Floutre-orka-qa.png&w=256&q=75" alt="OpenQA Logo" style="width: 100px; height: 100px;">
+      </span>
     </div>
     <h1>Sign in</h1>
     <p class="subtitle">Access your QA dashboard</p>

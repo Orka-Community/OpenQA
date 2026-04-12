@@ -1,124 +1,20 @@
+import { getSidebarHTML } from './components/sidebar.js';
+import { getBaseStyles, getFontsLink } from './components/styles.js';
+
 // Config HTML template
 export function getConfigHTML(cfg: any): string {
+  const sidebar = getSidebarHTML({ activePage: 'config' });
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenQA — Configuration</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  ${getFontsLink()}
   <style>
-    :root {
-      --bg: #080b10;
-      --surface: #0d1117;
-      --panel: #111720;
-      --border: rgba(255,255,255,0.06);
-      --border-hi: rgba(255,255,255,0.12);
-      --accent: #f97316;
-      --accent-lo: rgba(249,115,22,0.08);
-      --green: #22c55e;
-      --green-lo: rgba(34,197,94,0.08);
-      --red: #ef4444;
-      --red-lo: rgba(239,68,68,0.08);
-      --text-1: #f1f5f9;
-      --text-2: #8b98a8;
-      --text-3: #4b5563;
-      --mono: 'DM Mono', monospace;
-      --sans: 'Syne', sans-serif;
-      --radius: 10px;
-      --radius-lg: 16px;
-    }
+    ${getBaseStyles()}
 
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: var(--sans);
-      background: var(--bg);
-      color: var(--text-1);
-      min-height: 100vh;
-    }
-
-    .shell {
-      display: grid;
-      grid-template-columns: 220px 1fr;
-      min-height: 100vh;
-    }
-
-    aside {
-      background: var(--surface);
-      border-right: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      padding: 28px 0;
-      position: sticky;
-      top: 0;
-      height: 100vh;
-    }
-
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 0 24px 32px;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 12px;
-    }
-
-    .logo-mark {
-      width: 34px;
-      height: 34px;
-      background: var(--accent);
-      border-radius: 8px;
-      display: grid;
-      place-items: center;
-      font-size: 16px;
-    }
-
-    .logo-name { font-weight: 800; font-size: 18px; letter-spacing: -0.5px; }
-    .logo-version { font-family: var(--mono); font-size: 10px; color: var(--text-3); }
-
-    .nav-section { padding: 8px 12px; flex: 1; }
-    .nav-label { font-family: var(--mono); font-size: 10px; color: var(--text-3); letter-spacing: 1.5px; text-transform: uppercase; padding: 0 12px; margin: 16px 0 6px; }
-
-    .nav-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 9px 12px;
-      border-radius: var(--radius);
-      color: var(--text-2);
-      text-decoration: none;
-      font-size: 14px;
-      font-weight: 600;
-      transition: all 0.15s ease;
-    }
-    .nav-item:hover { color: var(--text-1); background: var(--panel); }
-    .nav-item.active { color: var(--accent); background: var(--accent-lo); }
-    .nav-item .icon { font-size: 15px; width: 20px; text-align: center; }
-
-    .sidebar-footer { padding: 16px 24px; border-top: 1px solid var(--border); }
-    .status-pill { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--text-2); }
-    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
-
-    main { display: flex; flex-direction: column; min-height: 100vh; overflow-y: auto; }
-
-    .topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 20px 32px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-
-    .page-title { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }
-    .page-breadcrumb { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 2px; }
-    .topbar-actions { display: flex; align-items: center; gap: 12px; }
-
+    /* Page-specific styles */
     .btn-sm {
       font-family: var(--sans);
       font-weight: 700;
@@ -129,12 +25,10 @@ export function getConfigHTML(cfg: any): string {
       cursor: pointer;
       transition: all 0.15s ease;
     }
-    .btn-ghost { background: var(--panel); color: var(--text-2); border: 1px solid var(--border); }
-    .btn-ghost:hover { border-color: var(--border-hi); color: var(--text-1); }
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-primary:hover { background: #ea580c; box-shadow: 0 0 20px rgba(249,115,22,0.35); }
-
-    .content { padding: 28px 32px; display: flex; flex-direction: column; gap: 24px; }
+    .btn-sm.btn-ghost { background: var(--panel); color: var(--text-2); border: 1px solid var(--border); }
+    .btn-sm.btn-ghost:hover { border-color: var(--border-hi); color: var(--text-1); }
+    .btn-sm.btn-primary { background: var(--accent); color: #fff; }
+    .btn-sm.btn-primary:hover { background: #ea580c; box-shadow: 0 0 20px rgba(249,115,22,0.35); }
 
     .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
     .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid var(--border); }
@@ -184,27 +78,7 @@ export function getConfigHTML(cfg: any): string {
 <body>
 
 <div class="shell">
-  <aside>
-    <div class="logo">
-      <div class="logo-mark">🔬</div>
-      <div>
-        <div class="logo-name">OpenQA</div>
-        <div class="logo-version">v2.1.0 · OSS</div>
-      </div>
-    </div>
-
-    <div class="nav-section">
-      <div class="nav-label">Overview</div>
-      <a class="nav-item" href="/"><span class="icon">▦</span> Dashboard</a>
-      <a class="nav-item" href="/kanban"><span class="icon">⊞</span> Kanban</a>
-      <div class="nav-label">System</div>
-      <a class="nav-item active" href="/config"><span class="icon">⚙</span> Configuration</a>
-    </div>
-
-    <div class="sidebar-footer">
-      <div class="status-pill"><div class="dot"></div><span>System Ready</span></div>
-    </div>
-  </aside>
+  ${sidebar}
 
   <main>
     <div class="topbar">

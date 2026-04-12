@@ -303,5 +303,47 @@ export function createApiRouter(db: OpenQADatabase, config: ConfigManager): Rout
     }
   });
 
+  // ==================== Coverage API ====================
+
+  router.get('/api/coverage', async (_req, res) => {
+    try {
+      const coverage = await db.getAggregatedCoverage();
+      res.json(coverage);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.get('/api/coverage/stats', async (_req, res) => {
+    try {
+      const stats = await db.getCoverageStats();
+      res.json(stats);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/coverage/track', async (req, res) => {
+    try {
+      const { sessionId, url, actionType } = req.body as { sessionId: string; url: string; actionType?: 'visit' | 'action' | 'form' | 'api' };
+      if (!sessionId || !url) {
+        return res.status(400).json({ error: 'sessionId and url are required' });
+      }
+      const entry = await db.trackPageVisit(sessionId, url, actionType || 'visit');
+      res.json(entry);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.delete('/api/coverage', async (_req, res) => {
+    try {
+      await db.clearCoverage();
+      res.json({ success: true });
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   return router;
 }

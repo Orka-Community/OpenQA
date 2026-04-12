@@ -7,7 +7,8 @@ export class OpenQASQLiteDatabase {
   private db: Database.Database;
 
   constructor(dbPath: string = './data/openqa.db') {
-    mkdirSync(dirname(dbPath), { recursive: true });
+    // Create data directory with proper permissions (0o777 allows write access in Docker)
+    mkdirSync(dirname(dbPath), { recursive: true, mode: 0o777 });
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');

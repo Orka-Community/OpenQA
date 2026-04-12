@@ -10,8 +10,15 @@ export default defineConfig([
       'cli/config.html': 'cli/config.html.ts',
       'cli/kanban.html': 'cli/kanban.html.ts',
       'cli/env.html': 'cli/env.html.ts',
+      'cli/sessions.html': 'cli/sessions.html.ts',
+      'cli/issues.html': 'cli/issues.html.ts',
+      'cli/tests.html': 'cli/tests.html.ts',
+      'cli/coverage.html': 'cli/coverage.html.ts',
+      'cli/logs.html': 'cli/logs.html.ts',
       'cli/env-routes': 'cli/env-routes.ts',
-      'cli/env-config': 'cli/env-config.ts'
+      'cli/env-config': 'cli/env-config.ts',
+      'cli/components/sidebar': 'cli/components/sidebar.ts',
+      'cli/components/styles': 'cli/components/styles.ts'
     },
     format: ['esm'],
     dts: false,

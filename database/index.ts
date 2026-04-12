@@ -76,6 +76,20 @@ export interface User {
   updatedAt: string;
 }
 
+export interface CoverageEntry {
+  id: string;
+  session_id: string;
+  url: string;
+  path: string;
+  visits: number;
+  actions: number;
+  forms_tested: number;
+  api_calls: number;
+  issues_found: number;
+  last_visited: string;
+  created_at: string;
+}
+
 interface DatabaseSchema {
   config: Record<string, string>;
   test_sessions: TestSession[];
@@ -83,6 +97,7 @@ interface DatabaseSchema {
   bugs: Bug[];
   kanban_tickets: KanbanTicket[];
   users: User[];
+  coverage: CoverageEntry[];
 }
 
 export class OpenQADatabase {
@@ -104,6 +119,7 @@ export class OpenQADatabase {
       bugs: [],
       kanban_tickets: [],
       users: [],
+      coverage: [],
     });
 
     this.db.read();
@@ -115,6 +131,7 @@ export class OpenQADatabase {
         bugs: [],
         kanban_tickets: [],
         users: [],
+        coverage: [],
       };
       this.db.write();
     }
@@ -128,6 +145,7 @@ export class OpenQADatabase {
     // Auto-migrate: add any missing top-level arrays added in later versions
     let migrated = false;
     if (!this.db!.data.users) { this.db!.data.users = []; migrated = true; }
+    if (!this.db!.data.coverage) { this.db!.data.coverage = []; migrated = true; }
     if (migrated) await this.db!.write();
   }
 
@@ -494,5 +512,170 @@ export class OpenQADatabase {
 
   async close() {
     // LowDB doesn't need explicit closing
+  }
+
+  // ==================== Coverage Tracking ====================
+
+  async trackPageVisit(sessionId: string, url: string, actionType: 'visit' | 'action' | 'form' | 'api' = 'visit'): Promise<CoverageEntry> {
+    await this.ensureInitialized();
+    
+    let path: string;
+    try {
+      const urlObj = new URL(url);
+      path = urlObj.pathname || '/';
+    } catch {
+      path = url.startsWith('/') ? url : '/' + url;
+    }
+    
+    // Find existing entry for this path
+    let entry = this.db!.data.coverage.find(c => c.path === path && c.session_id === sessionId);
+    
+    if (entry) {
+      // Update existing entry
+      entry.visits += actionType === 'visit' ? 1 : 0;
+      entry.actions += actionType === 'action' ? 1 : 0;
+      entry.forms_tested += actionType === 'form' ? 1 : 0;
+      entry.api_calls += actionType === 'api' ? 1 : 0;
+      entry.last_visited = new Date().toISOString();
+    } else {
+      // Create new entry
+      entry = {
+        id: `cov_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        session_id: sessionId,
+        url,
+        path,
+        visits: actionType === 'visit' ? 1 : 0,
+        actions: actionType === 'action' ? 1 : 0,
+        forms_tested: actionType === 'form' ? 1 : 0,
+        api_calls: actionType === 'api' ? 1 : 0,
+        issues_found: 0,
+        last_visited: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      };
+      this.db!.data.coverage.push(entry);
+    }
+    
+    await this.db!.write();
+    return entry;
+  }
+
+  async incrementCoverageIssues(sessionId: string, path: string): Promise<void> {
+    await this.ensureInitialized();
+    const entry = this.db!.data.coverage.find(c => c.path === path && c.session_id === sessionId);
+    if (entry) {
+      entry.issues_found += 1;
+      await this.db!.write();
+    }
+  }
+
+  async getCoverageBySession(sessionId: string): Promise<CoverageEntry[]> {
+    await this.ensureInitialized();
+    return this.db!.data.coverage
+      .filter(c => c.session_id === sessionId)
+      .sort((a, b) => b.actions - a.actions);
+  }
+
+  async getAllCoverage(): Promise<CoverageEntry[]> {
+    await this.ensureInitialized();
+    return this.db!.data.coverage.sort((a, b) => b.actions - a.actions);
+  }
+
+  async getCoverageStats(): Promise<{
+    totalPages: number;
+    totalVisits: number;
+    totalActions: number;
+    totalForms: number;
+    totalApiCalls: number;
+    totalIssues: number;
+    pagesCovered: string[];
+  }> {
+    await this.ensureInitialized();
+    const coverage = this.db!.data.coverage;
+    
+    // Aggregate by unique paths
+    const pathStats = new Map<string, CoverageEntry>();
+    coverage.forEach(c => {
+      const existing = pathStats.get(c.path);
+      if (existing) {
+        existing.visits += c.visits;
+        existing.actions += c.actions;
+        existing.forms_tested += c.forms_tested;
+        existing.api_calls += c.api_calls;
+        existing.issues_found += c.issues_found;
+      } else {
+        pathStats.set(c.path, { ...c });
+      }
+    });
+    
+    const aggregated = Array.from(pathStats.values());
+    
+    return {
+      totalPages: aggregated.length,
+      totalVisits: aggregated.reduce((sum, c) => sum + c.visits, 0),
+      totalActions: aggregated.reduce((sum, c) => sum + c.actions, 0),
+      totalForms: aggregated.reduce((sum, c) => sum + c.forms_tested, 0),
+      totalApiCalls: aggregated.reduce((sum, c) => sum + c.api_calls, 0),
+      totalIssues: aggregated.reduce((sum, c) => sum + c.issues_found, 0),
+      pagesCovered: aggregated.map(c => c.path),
+    };
+  }
+
+  async getAggregatedCoverage(): Promise<Array<{
+    path: string;
+    visits: number;
+    actions: number;
+    forms_tested: number;
+    api_calls: number;
+    issues_found: number;
+    coverage_percent: number;
+  }>> {
+    await this.ensureInitialized();
+    const coverage = this.db!.data.coverage;
+    
+    // Aggregate by unique paths
+    const pathStats = new Map<string, {
+      path: string;
+      visits: number;
+      actions: number;
+      forms_tested: number;
+      api_calls: number;
+      issues_found: number;
+    }>();
+    
+    coverage.forEach(c => {
+      const existing = pathStats.get(c.path);
+      if (existing) {
+        existing.visits += c.visits;
+        existing.actions += c.actions;
+        existing.forms_tested += c.forms_tested;
+        existing.api_calls += c.api_calls;
+        existing.issues_found += c.issues_found;
+      } else {
+        pathStats.set(c.path, {
+          path: c.path,
+          visits: c.visits,
+          actions: c.actions,
+          forms_tested: c.forms_tested,
+          api_calls: c.api_calls,
+          issues_found: c.issues_found,
+        });
+      }
+    });
+    
+    const aggregated = Array.from(pathStats.values());
+    const maxActions = Math.max(...aggregated.map(c => c.actions), 1);
+    
+    return aggregated
+      .map(c => ({
+        ...c,
+        coverage_percent: Math.min(100, Math.round((c.actions / maxActions) * 100)),
+      }))
+      .sort((a, b) => b.actions - a.actions);
+  }
+
+  async clearCoverage(): Promise<void> {
+    await this.ensureInitialized();
+    this.db!.data.coverage = [];
+    await this.db!.write();
   }
 }

@@ -48,6 +48,9 @@ export class BrowserTools {
               output: `Page title: ${title}`
             });
             
+            // Track coverage
+            this.db.trackPageVisit(this.sessionId, url, 'visit');
+            
             return { output: `Successfully navigated to ${url}. Page title: "${title}"` };
           } catch (error: unknown) {
             return { output: `Failed to navigate: ${error instanceof Error ? error.message : String(error)}`, error: error instanceof Error ? error.message : String(error) };
@@ -72,6 +75,10 @@ export class BrowserTools {
               description: `Clicked element: ${selector}`,
               input: selector
             });
+            
+            // Track coverage - action on current page
+            const currentUrl = this.page.url();
+            this.db.trackPageVisit(this.sessionId, currentUrl, 'action');
             
             return { output: `Successfully clicked element: ${selector}` };
           } catch (error: unknown) {
@@ -98,6 +105,10 @@ export class BrowserTools {
               description: `Filled input ${selector}`,
               input: `${selector} = ${text}`
             });
+            
+            // Track coverage - form interaction
+            const currentUrl = this.page.url();
+            this.db.trackPageVisit(this.sessionId, currentUrl, 'form');
             
             return { output: `Successfully filled input ${selector} with text` };
           } catch (error: unknown) {

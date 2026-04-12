@@ -12,6 +12,11 @@ import { getConfigHTML } from './config.html.js';
 import { getLoginHTML } from './login.html.js';
 import { getSetupHTML } from './setup.html.js';
 import { getEnvHTML } from './env.html.js';
+import { getSessionsHTML } from './sessions.html.js';
+import { getIssuesHTML } from './issues.html.js';
+import { getTestsHTML } from './tests.html.js';
+import { getCoverageHTML } from './coverage.html.js';
+import { getLogsHTML } from './logs.html.js';
 import chalk from 'chalk';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
@@ -208,6 +213,26 @@ export async function startWebServer() {
 
   app.get('/config/env', authOrRedirect(db), (_req, res) => {
     res.send(getEnvHTML());
+  });
+
+  app.get('/sessions', authOrRedirect(db), (_req, res) => {
+    res.send(getSessionsHTML());
+  });
+
+  app.get('/issues', authOrRedirect(db), (_req, res) => {
+    res.send(getIssuesHTML());
+  });
+
+  app.get('/tests', authOrRedirect(db), (_req, res) => {
+    res.send(getTestsHTML());
+  });
+
+  app.get('/coverage', authOrRedirect(db), (_req, res) => {
+    res.send(getCoverageHTML());
+  });
+
+  app.get('/logs', authOrRedirect(db), (_req, res) => {
+    res.send(getLogsHTML());
   });
 
   const server = app.listen(cfg.web.port, cfg.web.host, () => {
