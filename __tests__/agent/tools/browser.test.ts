@@ -12,6 +12,7 @@ const mockPage = {
   screenshot: vi.fn().mockResolvedValue(undefined),
   textContent: vi.fn().mockResolvedValue('Hello World'),
   waitForTimeout: vi.fn().mockResolvedValue(undefined),
+  url: vi.fn().mockReturnValue('https://example.com'),
   on: vi.fn(),
 };
 

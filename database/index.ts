@@ -109,7 +109,8 @@ export class OpenQADatabase {
 
   private initialize() {
     const dir = dirname(this.dbPath);
-    mkdirSync(dir, { recursive: true });
+    // Create data directory with proper permissions (0o777 allows write access in Docker)
+    mkdirSync(dir, { recursive: true, mode: 0o777 });
 
     const adapter = new JSONFile<DatabaseSchema>(this.dbPath);
     this.db = new Low<DatabaseSchema>(adapter, {
