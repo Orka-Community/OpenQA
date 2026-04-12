@@ -765,7 +765,7 @@ export function getDashboardHTML(): string {
       <div class="nav-label">System</div>
       <a class="nav-item" href="/config">
         <span class="icon">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-columns3-cog-icon lucide-columns-3-cog"><path d="M10.5 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5.5"/><path d="m14.3 19.6 1-.4"/><path d="M15 3v7.5"/><path d="m15.2 16.9-.9-.3"/><path d="m16.6 21.7.3-.9"/><path d="m16.8 15.3-.4-1"/><path d="m19.1 15.2.3-.9"/><path d="m19.6 21.7-.4-1"/><path d="m20.7 16.8 1-.4"/><path d="m21.7 19.4-.9-.3"/><path d="M9 3v18"/><circle cx="18" cy="18" r="3"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-monitor-cog-icon lucide-monitor-cog"><path d="M12 17v4"/><path d="m14.305 7.53.923-.382"/><path d="m15.228 4.852-.923-.383"/><path d="m16.852 3.228-.383-.924"/><path d="m16.852 8.772-.383.923"/><path d="m19.148 3.228.383-.924"/><path d="m19.53 9.696-.382-.924"/><path d="m20.772 4.852.924-.383"/><path d="m20.772 7.148.924.383"/><path d="M22 13v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7"/><path d="M8 21h8"/><circle cx="18" cy="6" r="3"/></svg>
         </span> Config
       </a>
       <a class="nav-item" href="/config/env">
@@ -793,7 +793,7 @@ export function getDashboardHTML(): string {
       <div class="topbar-actions">
         <button class="btn-sm btn-ghost">Export</button>
         <button class="btn-sm btn-ghost" onclick="location.reload()">↻ Refresh</button>
-        <button class="btn-sm btn-primary" onclick="startSession()">▶ Run Session</button>
+        <button class="btn-sm btn-primary" id="run-session-btn" onclick="toggleSession()">▶ Run Session</button>
       </div>
     </div>
 
@@ -1262,7 +1262,10 @@ export function getDashboardHTML(): string {
   }
 
   function switchAgentTab(tab) {
-    const agentsTabs = document.querySelectorAll('#agents-table .tabs .tab');
+    // Find tabs in the panel containing agents-table
+    const panel = document.getElementById('agents-table')?.closest('.panel');
+    const agentsTabs = panel?.querySelectorAll('.tabs .tab');
+    if (!agentsTabs) return;
     agentsTabs.forEach(t => t.classList.remove('active'));
     
     if (tab === 'specialists') {
@@ -1490,25 +1493,70 @@ export function getDashboardHTML(): string {
     }
   }
 
+  // Session state
+  let isSessionRunning = false;
+
+  function updateRunButton(running) {
+    const btn = document.getElementById('run-session-btn');
+    if (!btn) return;
+    isSessionRunning = running;
+    if (running) {
+      btn.textContent = '■ Stop Session';
+      btn.classList.remove('btn-primary');
+      btn.classList.add('btn-danger');
+      btn.style.background = '#ef4444';
+    } else {
+      btn.textContent = '▶ Run Session';
+      btn.classList.remove('btn-danger');
+      btn.classList.add('btn-primary');
+      btn.style.background = '';
+    }
+  }
+
+  async function toggleSession() {
+    if (isSessionRunning) {
+      await stopSession();
+    } else {
+      await startSession();
+    }
+  }
+
   // Actions
   async function startSession() {
+    const btn = document.getElementById('run-session-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ Starting...';
+    }
     try {
       const response = await fetch('/api/agent/start', { method: 'POST', credentials: 'include' });
       const result = await response.json();
       if (result.success) {
+        updateRunButton(true);
         addActivity({ type: 'success', message: 'Session started', timestamp: new Date().toISOString() });
       } else {
+        updateRunButton(false);
         addActivity({ type: 'error', message: result.error || 'Failed to start session', timestamp: new Date().toISOString() });
       }
     } catch (error) {
+      updateRunButton(false);
       addActivity({ type: 'error', message: 'Failed to start session', timestamp: new Date().toISOString() });
     }
+    if (btn) btn.disabled = false;
   }
 
   async function stopSession() {
+    const btn = document.getElementById('run-session-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ Stopping...';
+    }
     try {
       const response = await fetch('/api/agent/stop', { method: 'POST', credentials: 'include' });
       const result = await response.json();
+      if (result.success) {
+        updateRunButton(false);
+      }
       addActivity({
         type: result.success ? 'warning' : 'error',
         message: result.success ? 'Session stopped' : (result.error || 'Failed to stop session'),
@@ -1517,6 +1565,7 @@ export function getDashboardHTML(): string {
     } catch (error) {
       addActivity({ type: 'error', message: 'Failed to stop session', timestamp: new Date().toISOString() });
     }
+    if (btn) btn.disabled = false;
   }
   
   async function pauseSession() {
@@ -1549,6 +1598,11 @@ export function getDashboardHTML(): string {
 
       // Update status indicator
       updateStatus(status);
+      
+      // Update run button state based on agent status
+      if (status.running) {
+        updateRunButton(true);
+      }
 
       // Update metrics cards
       if (sessions.length > 0) {

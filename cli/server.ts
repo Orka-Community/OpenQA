@@ -23,6 +23,9 @@ export async function startWebServer() {
 
   const app = express();
 
+  // Trust proxy for reverse proxies (Traefik, Nginx, etc.)
+  app.set('trust proxy', 1);
+
   // CORS — allow configurable origins via env
   const allowedOrigins = (process.env.CORS_ORIGINS || `http://localhost:${cfg.web.port}`).split(',');
   app.use(cors({
@@ -45,6 +48,7 @@ export async function startWebServer() {
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later.' },
+    validate: { xForwardedForHeader: false }, // Disable validation for proxied requests
   });
   app.use('/api/', apiLimiter);
 
@@ -55,6 +59,7 @@ export async function startWebServer() {
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please slow down.' },
+    validate: { xForwardedForHeader: false }, // Disable validation for proxied requests
   });
   app.use(['/api/start', '/api/stop', '/api/auth/login'], mutationLimiter);
 

@@ -87,6 +87,9 @@ const db = new OpenQADatabase(cfg.database?.path || './data/openqa.json');
 
 const app = express();
 
+// Trust proxy for reverse proxies (Traefik, Nginx, etc.)
+app.set('trust proxy', 1);
+
 // CORS — allow configurable origins via env
 const allowedOrigins = (process.env.CORS_ORIGINS || `http://localhost:${cfg.web.port}`).split(',');
 app.use(cors({
@@ -109,6 +112,7 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
+  validate: { xForwardedForHeader: false }, // Disable validation for proxied requests
 });
 app.use('/api/', apiLimiter);
 
@@ -119,6 +123,7 @@ const mutationLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please slow down.' },
+  validate: { xForwardedForHeader: false }, // Disable validation for proxied requests
 });
 app.use(['/api/agent/start', '/api/project/setup', '/api/project/test', '/api/brain/run', '/api/auth/login'], mutationLimiter);
 
