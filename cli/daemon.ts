@@ -171,8 +171,10 @@ app.get('/', authOrRedirect(db), (_req, res) => {
   res.send(getDashboardHTML());
 });
 
-app.get('/config', authOrRedirect(db), (_req, res) => {
-  res.send(getConfigHTML(cfg));
+app.get('/config', authOrRedirect(db), async (_req, res) => {
+  // Load fresh config from database on every request
+  const freshConfig = await config.getConfig();
+  res.send(getConfigHTML(freshConfig));
 });
 
 app.get('/config/env', authOrRedirect(db), (_req, res) => {
@@ -204,25 +206,40 @@ app.get('/logs', authOrRedirect(db), (_req, res) => {
 });
 
 // Override /api/status with agent-aware version
-app.get('/api/status', (_req, res) => {
-  const status = agent?.getStats() || { isRunning: false };
+app.get('/api/status', async (_req, res) => {
+  const a = await ensureAgent();
+  const status = a.getStats();
   res.json(status);
 });
 
 app.post('/api/agent/start', async (_req, res) => {
-  if (agent?.getStats()?.isRunning) {
+  const a = await ensureAgent();
+  if (a.getStats().isRunning) {
     return res.status(400).json({ error: 'Agent already running' });
   }
 
   try {
-    const saasConfig = await db.getConfig('saas_config');
-    if (!saasConfig) {
+    // Build SaaS config from individual keys (as saved by /api/config)
+    const saasUrl = await db.getConfig('saas.url');
+    if (!saasUrl) {
       return res.status(400).json({ error: 'SaaS not configured. Please configure target URL first.' });
     }
 
-    const config = JSON.parse(saasConfig);
-    const a = ensureAgent();
-    a.configureSaaS(config); // Configure SaaS before running
+    const saasConfig = {
+      name: await db.getConfig('saas.name') || 'Target Application',
+      description: await db.getConfig('saas.description') || 'Application to test',
+      url: saasUrl,
+      auth: {
+        type: (await db.getConfig('saas.authType') || 'none') as 'none' | 'basic' | 'oauth' | 'session',
+        credentials: {
+          username: await db.getConfig('saas.username') || '',
+          password: await db.getConfig('saas.password') || ''
+        }
+      }
+    };
+
+    const a = await ensureAgent();
+    a.configureSaaS(saasConfig); // Configure SaaS before running
     a.runAutonomous().catch(console.error);
     res.json({ success: true });
   } catch (error) {
@@ -240,24 +257,27 @@ app.post('/api/agent/stop', (_req, res) => {
 });
 
 // SaaS Configuration endpoints
-app.get('/api/saas-config', (_req, res) => {
-  res.json(ensureAgent().getSaaSConfig() || {});
+app.get('/api/saas-config', async (_req, res) => {
+  const a = await ensureAgent();
+  res.json(a.getSaaSConfig() || {});
 });
 
-app.post('/api/saas-config', validate(saasConfigSchema), (req, res) => {
+app.post('/api/saas-config', validate(saasConfigSchema), async (req, res) => {
   try {
-    const config = ensureAgent().configureSaaS(req.body);
+    const a = await ensureAgent();
+    const config = a.configureSaaS(req.body);
     res.json(config);
   } catch (error: unknown) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
-app.post('/api/saas-config/quick', validate(quickSetupSchema), (req, res) => {
+app.post('/api/saas-config/quick', validate(quickSetupSchema), async (req, res) => {
   const { name, description, url } = req.body;
 
   try {
-    const config = ensureAgent().quickSetup(name, description, url);
+    const a = await ensureAgent();
+    const config = a.quickSetup(name, description, url);
     res.json(config);
   } catch (error: unknown) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
@@ -303,7 +323,8 @@ app.post('/api/project/setup', validate(projectSetupSchema), async (req, res) =>
   const { repoPath, startServer } = req.body;
 
   try {
-    const status = await ensureAgent().setupProject(repoPath, { startServer });
+    const a = await ensureAgent();
+  const status = await a.setupProject(repoPath, { startServer });
     res.json(status);
   } catch (error: unknown) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
@@ -318,7 +339,8 @@ app.post('/api/project/test', validate(projectTestSchema), async (req, res) => {
   const { repoPath } = req.body;
 
   try {
-    const result = await ensureAgent().runProjectTests(repoPath);
+    const a = await ensureAgent();
+  const result = await a.runProjectTests(repoPath);
     res.json(result);
   } catch (error: unknown) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
@@ -388,7 +410,8 @@ app.post('/api/brain/create-agent', validate(createAgentSchema), async (req, res
   }
   
   try {
-    const dynamicAgent = await agent.createAgent(purpose);
+    const a = await ensureAgent();
+    const dynamicAgent = await a.createAgent(purpose);
     res.json(dynamicAgent);
   } catch (error: unknown) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
@@ -514,11 +537,34 @@ function setupAgentEvents(a: OpenQAAgentV2) {
   });
 }
 
-/** Ensure agent exists with events wired up */
-function ensureAgent(): OpenQAAgentV2 {
+/** Ensure agent exists with events wired up and SaaS configured */
+async function ensureAgent(): Promise<OpenQAAgentV2> {
   if (!agent) {
     agent = new OpenQAAgentV2();
     setupAgentEvents(agent);
+    
+    // Auto-configure SaaS from database if available
+    try {
+      const saasUrl = await db.getConfig('saas.url');
+      if (saasUrl) {
+        const saasConfig = {
+          name: await db.getConfig('saas.name') || 'Target Application',
+          description: await db.getConfig('saas.description') || 'Application to test',
+          url: saasUrl,
+          auth: {
+            type: (await db.getConfig('saas.authType') || 'none') as 'none' | 'basic' | 'oauth' | 'session',
+            credentials: {
+              username: await db.getConfig('saas.username') || '',
+              password: await db.getConfig('saas.password') || ''
+            }
+          }
+        };
+        agent.configureSaaS(saasConfig);
+        logger.info('Agent auto-configured with SaaS settings', { url: saasUrl });
+      }
+    } catch (e) {
+      logger.warn('No SaaS config found in database, agent not configured');
+    }
   }
   return agent;
 }
@@ -532,18 +578,24 @@ function broadcast(message: Record<string, unknown>) {
   });
 }
 
-// Auto-start if configured
+// Initialize agent on startup (loads SaaS config from database)
 (async () => {
-  const saasConfig = await db.getConfig('saas_config');
-  if (cfg.agent?.autoStart && saasConfig) {
-    try {
-      const config = JSON.parse(saasConfig);
-      const a = ensureAgent();
-      a.configureSaaS(config); // Configure SaaS before running
-      a.runAutonomous().catch((e) => logger.error('Auto-start failed', { error: e instanceof Error ? e.message : String(e) }));
-    } catch (e) {
-      logger.error('Failed to parse or configure SaaS', { error: e instanceof Error ? e.message : String(e) });
+  try {
+    // Always create agent to load SaaS config (even if not auto-starting)
+    await ensureAgent();
+    logger.info('Agent initialized with SaaS configuration');
+    
+    // Auto-start agent if configured
+    if (cfg.agent?.autoStart) {
+      const a = await ensureAgent();
+      if (a.getStats().isRunning) {
+        logger.info('Agent already running');
+      } else {
+        a.runAutonomous().catch((e: Error) => logger.error('Auto-start failed', { error: e.message }));
+      }
     }
+  } catch (e) {
+    logger.error('Failed to initialize agent', { error: e instanceof Error ? e.message : String(e) });
   }
 })();
 

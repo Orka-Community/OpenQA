@@ -354,10 +354,12 @@ export class OpenQAAgentV2 extends EventEmitter {
    * Get statistics
    */
   getStats() {
+    const saasConfig = this.saasConfigManager.getConfig();
     return {
       isRunning: this.isRunning,
       sessionId: this.sessionId,
-      saas: this.saasConfigManager.getConfig(),
+      target: saasConfig?.url || null,
+      saas: saasConfig,
       brain: this.brain?.getStats() || null,
       gitListenerActive: !!this.gitListener
     };
