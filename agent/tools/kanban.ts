@@ -22,7 +22,7 @@ export class KanbanTools {
           { name: 'tags', type: 'string' as const, description: 'Comma-separated tags for categorization', required: false },
           { name: 'screenshot_path', type: 'string' as const, description: 'Path to screenshot evidence', required: false }
         ],
-        execute: async ({ title, description, priority, column = 'to-do', tags = [], screenshot_path }: { title: string; description: string; priority: KanbanTicket['priority']; column?: KanbanTicket['column']; tags?: string[]; screenshot_path?: string }) => {
+        execute: async ({ title, description, priority, column = 'backlog', tags = [], screenshot_path }: { title: string; description: string; priority: KanbanTicket['priority']; column?: KanbanTicket['column']; tags?: string[]; screenshot_path?: string }) => {
           try {
             const allTags = ['automated-qa', ...tags];
 

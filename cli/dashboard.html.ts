@@ -1024,7 +1024,7 @@ export function getDashboardHTML(): string {
         updateStatus(data.data);
         break;
       case 'session':
-        updateMetrics(data.data);
+        updateMetrics(data.data, data.data.status === 'running');
         break;
       // 'sessions' (plural) = list of TestSession records from DB
       case 'sessions':
@@ -1122,7 +1122,7 @@ export function getDashboardHTML(): string {
     }
   }
 
-  function updateMetrics(session) {
+  function updateMetrics(session, isRunning = false) {
     document.getElementById('active-agents').textContent = session.active_agents || 0;
     document.getElementById('total-actions').textContent = session.total_actions || 0;
     document.getElementById('bugs-found').textContent = session.bugs_found || 0;
@@ -1130,7 +1130,13 @@ export function getDashboardHTML(): string {
     const rate = session.success_rate;
     document.getElementById('success-rate').textContent = rate > 0 ? rate + '%' : '—';
     
-    // Update chart data
+    // Only update chart data if session is actively running
+    // This prevents the chart from auto-updating when no session is active
+    if (!isRunning) {
+      return;
+    }
+    
+    // Update chart data for running sessions
     const now = new Date();
     const timeLabel = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
     
@@ -1724,6 +1730,7 @@ export function getDashboardHTML(): string {
       // Update metrics cards
       if (sessions.length > 0) {
         const session = sessions[0];
+        const isRunning = session.status === 'running';
         updateMetrics({
           active_agents: agents.filter(a => a.status === 'running').length,
           total_actions: session.total_actions || 0,
@@ -1731,7 +1738,7 @@ export function getDashboardHTML(): string {
           success_rate: session.total_actions > 0
             ? Math.round(((session.total_actions - (session.bugs_found || 0)) / session.total_actions) * 100)
             : 0
-        });
+        }, isRunning);
         if (session.id) {
           document.getElementById('session-id').textContent = session.id.substring(0, 12) + '...';
         }

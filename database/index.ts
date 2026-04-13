@@ -59,6 +59,7 @@ export interface KanbanTicket {
   bug_id?: string;
   title: string;
   description: string;
+  type?: 'bug' | 'task' | 'feature' | 'improvement';
   priority: 'low' | 'medium' | 'high' | 'critical';
   column: 'backlog' | 'to-do' | 'in-progress' | 'done';
   tags?: string;
@@ -279,6 +280,7 @@ export class OpenQADatabase {
       id: `ticket_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      type: 'bug', // Default type
       ...ticket
     };
     this.db!.data.kanban_tickets.push(newTicket);
@@ -334,7 +336,15 @@ export class OpenQADatabase {
     const currentSession = sessions[0];
     
     // Return real agent state based on session status
-    const isRunning = currentSession?.status === 'running';
+    // Guard against stale 'running' sessions: require no ended_at and started within 2h
+    const TWO_HOURS = 2 * 60 * 60 * 1000;
+    const isRecentlyStarted = currentSession?.started_at
+      ? Date.now() - new Date(currentSession.started_at).getTime() < TWO_HOURS
+      : false;
+    const isRunning =
+      currentSession?.status === 'running' &&
+      !currentSession?.ended_at &&
+      isRecentlyStarted;
     const totalActions = currentSession?.total_actions || 0;
     
     // Main agent is always present
@@ -378,13 +388,17 @@ export class OpenQADatabase {
         'component-tester': 'UI Tester',
         'api-tester': 'API Tester',
         'auth-tester': 'Auth Specialist',
+        'performance-tester': 'Performance',
         'navigation-tester': 'Browser Specialist'
       };
+      
+      // If session is not running, all specialists should be idle
+      const sessionIsRunning = currentSession.status === 'running';
       
       Object.entries(specialistStats).forEach(([type, stats]) => {
         agents.push({
           name: nameMap[type] || type,
-          status: stats.status,
+          status: sessionIsRunning ? stats.status : 'idle', // Force idle if session stopped
           purpose: `${type} specialist`,
           performance: stats.actions > 0 ? Math.min(100, stats.actions * 10) : 0,
           tasks: stats.actions
