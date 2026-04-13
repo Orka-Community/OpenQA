@@ -248,9 +248,25 @@ export function getConfigHTML(cfg: any): string {
   }
 
   async function testConnection() {
-    const url = document.getElementById('saas_url').value.trim();
+    let url = document.getElementById('saas_url').value.trim();
+    let isGithub = false;
+
+    // If no URL configured, fall back to GITHUB_REPO from env config
     if (!url) {
-      showMessage('Enter a target URL first', 'error');
+      try {
+        const cfg = await fetch('/api/config', { credentials: 'include' }).then(r => r.json());
+        const repo = cfg?.github?.repo || '';
+        if (repo) {
+          // Normalise to an https URL without .git suffix
+          url = repo.replace(/\\.git$/, '');
+          if (!url.startsWith('http')) url = 'https://github.com/' + url;
+          isGithub = true;
+        }
+      } catch (_) {}
+    }
+
+    if (!url) {
+      showMessage('No target configured — enter an Application URL or set GITHUB_REPO in Environment', 'error');
       return;
     }
 
@@ -261,29 +277,29 @@ export function getConfigHTML(cfg: any): string {
     const btn = document.getElementById('btn-test-conn');
     btn.textContent = 'Testing…';
     btn.disabled = true;
-    showMessage('Testing connection…', 'success');
+    showMessage(isGithub ? \`Testing GitHub repo: \${url}…\` : 'Testing connection…', 'success');
 
     try {
       const response = await fetch('/api/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ url, authType, username, password })
+        body: JSON.stringify({ url, authType: isGithub ? 'none' : authType, username, password })
       });
       const r = await response.json();
 
       const latencyStr = r.latency != null ? \` · \${r.latency}ms\` : '';
       const authStr = r.authenticated ? ' (with auth)' : '';
+      const prefix = isGithub ? 'GitHub' : 'Target';
 
       if (r.success) {
-        showMessage(\`✓ \${r.message}\${authStr}\${latencyStr}\`, 'success');
+        showMessage(\`✓ \${prefix} reachable\${authStr}\${latencyStr}\`, 'success');
       } else {
-        // Give actionable hint per error category
         const hints = {
-          timeout:      'Check the URL and your network.',
-          network_error:'Server may be down or the URL is wrong.',
+          timeout:      'Check your network or firewall.',
+          network_error:'URL is unreachable — check spelling or DNS.',
           auth_failed:  'Credentials are wrong or auth is required.',
-          forbidden:    'Server is reachable — check IP restrictions or credentials.',
+          forbidden:    'Server is reachable — check IP restrictions.',
           not_found:    'URL path not found — check the base URL.',
           server_error: 'Server-side error — the app may be down.',
         };
