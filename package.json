@@ -1,6 +1,6 @@
 {
   "name": "@openqa/cli",
-  "version": "2.1.19",
+  "version": "2.1.20",
   "description": "Autonomous QA testing agent powered by Orka.js",
   "type": "module",
   "main": "./dist/cli/index.js",
