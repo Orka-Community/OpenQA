@@ -370,6 +370,7 @@ export function getDashboardHTML(): string {
     /* Agent Node */
     .agent-node {
       position: absolute;
+      z-index: 2;   /* must be above the SVG lines (z-index:1) */
       padding: 8px 16px;
       border-radius: 8px;
       font-size: 12px;
@@ -992,6 +993,8 @@ export function getDashboardHTML(): string {
   let activities = [];
   let performanceChart, activityChart, errorChart;
   let chartData = { actions: [], successRates: [], labels: [] };
+  // Track which agents sub-tab is visible so WS updates don't clobber a manual view
+  let activeAgentTab = 'agents';
 
   // WebSocket Connection
   function connectWebSocket() {
@@ -1023,6 +1026,10 @@ export function getDashboardHTML(): string {
       case 'session':
         updateMetrics(data.data);
         break;
+      // 'sessions' (plural) = list of TestSession records from DB
+      case 'sessions':
+        handleSessionsList(data.data);
+        break;
       case 'agents':
         updateAgents(data.data);
         break;
@@ -1038,7 +1045,36 @@ export function getDashboardHTML(): string {
       case 'intervention':
         addIntervention(data.data);
         break;
+      // Kanban badge — server pushes open ticket count
+      case 'kanban-stats':
+        document.getElementById('kanban-count').textContent = String(data.data?.count ?? 0);
+        break;
+      // Live dynamic agents from the running agent instance (different shape from DB agents)
+      case 'dynamic-agents':
+        // No UI update needed here — DB agents handle the hierarchy/panel
+        break;
     }
+  }
+
+  function handleSessionsList(sessions) {
+    if (!sessions || sessions.length === 0) return;
+    const latest = sessions[0];
+    // Sync session footer
+    if (latest.id) {
+      document.getElementById('session-id').textContent = latest.id.substring(0, 12) + '...';
+    }
+    // Sync metrics from latest session
+    updateMetrics({
+      active_agents: parseInt(document.getElementById('active-agents').textContent) || 0,
+      total_actions: latest.total_actions || 0,
+      bugs_found: latest.bugs_found || 0,
+      success_rate: latest.total_actions > 0
+        ? Math.round(((latest.total_actions - (latest.bugs_found || 0)) / latest.total_actions) * 100)
+        : 0,
+    });
+    // Refresh Activity and Error charts from full sessions history
+    if (window._refreshActivityChart) window._refreshActivityChart(sessions);
+    if (window._refreshErrorChart)   window._refreshErrorChart(sessions);
   }
 
   function updateStatus(status) {
@@ -1047,27 +1083,43 @@ export function getDashboardHTML(): string {
     const statusText = document.getElementById('agent-status-text');
     const stopBtn = document.getElementById('stop-btn');
     const pauseBtn = document.getElementById('pause-btn');
-    
+
+    // ── Sync the top-bar "Run Session" button ─────────────────────────────
+    updateRunButton(isRunning);
+
     // Update sidebar connection text
     document.getElementById('connection-text').textContent = isRunning ? 'Running' : 'Connected';
-    
+
     // Update session footer status
     indicator.className = 'status-indicator ' + (isRunning ? 'running' : 'idle');
     statusText.textContent = isRunning ? 'Running' : 'Idle';
-    
-    // Update target URL
+
+    // Update target URL — always reflect server truth
     if (status.target) {
       document.getElementById('target-url').textContent = status.target;
     }
-    
+
     // Update session ID
     if (status.sessionId) {
       document.getElementById('session-id').textContent = status.sessionId.substring(0, 12) + '...';
     }
-    
+
     // Enable/disable control buttons
     stopBtn.disabled = !isRunning;
     pauseBtn.disabled = !isRunning;
+
+    // ── Sync activity feed placeholder ────────────────────────────────────
+    // If no real activities yet, replace the static "Awaiting" message with truth
+    if (activities.length === 0) {
+      const container = document.getElementById('activity-list');
+      const placeholder = container.querySelector('.activity-message');
+      if (placeholder) {
+        const msg = isRunning
+          ? 'Session running — waiting for agent events...'
+          : 'System ready — no session running';
+        placeholder.textContent = msg;
+      }
+    }
   }
 
   function updateMetrics(session) {
@@ -1101,17 +1153,20 @@ export function getDashboardHTML(): string {
   }
 
   function updateAgents(agents) {
+    // Don't clobber the specialists view when the WS pushes agent data
+    if (activeAgentTab === 'specialists') return;
+
     const container = document.getElementById('agents-list');
     const countEl = document.getElementById('active-agents');
-    
+
     if (!agents || agents.length === 0) {
       container.innerHTML = '<div class="empty-state">Waiting for agent data...</div>';
       countEl.textContent = '0';
       return;
     }
-    
+
     countEl.textContent = agents.length;
-    
+
     container.innerHTML = agents.map(agent => \`
       <div class="table-row">
         <div class="agent-name">\${agent.name}</div>
@@ -1120,12 +1175,14 @@ export function getDashboardHTML(): string {
         <div>\${agent.performance || 0}%</div>
       </div>
     \`).join('');
-    
+
     // Update hierarchy
     updateHierarchy(agents);
   }
 
   function addActivity(activity) {
+    // Deduplicate: skip if the most recent activity has the exact same message
+    if (activities.length > 0 && activities[0].message === activity.message) return;
     activities.unshift(activity);
     if (activities.length > 20) activities.pop();
     
@@ -1159,21 +1216,25 @@ export function getDashboardHTML(): string {
     const chartOptions = {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
       plugins: {
-        legend: { 
+        legend: {
           display: true,
           position: 'top',
           labels: { color: '#8b98a8', font: { size: 11 } }
         }
       },
       scales: {
-        x: { 
-          ticks: { color: '#4b5563' }, 
+        x: {
+          ticks: { color: '#4b5563' },
           grid: { color: 'rgba(255,255,255,0.04)' }
         },
-        y: { 
-          ticks: { color: '#4b5563' }, 
-          grid: { color: 'rgba(255,255,255,0.04)' }
+        y: {
+          ticks: { color: '#4b5563' },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          beginAtZero: true,
+          suggestedMin: 0,
+          suggestedMax: 10   // avoids the -1..1 auto-range when all data is 0
         }
       }
     };
@@ -1185,7 +1246,7 @@ export function getDashboardHTML(): string {
       data: {
         labels: chartData.labels.length ? chartData.labels : ['—'],
         datasets: [{
-          label: 'Actions/min',
+          label: 'Total Actions',
           data: chartData.actions.length ? chartData.actions : [0],
           borderColor: '#f97316',
           backgroundColor: 'rgba(249, 115, 22, 0.1)',
@@ -1203,47 +1264,76 @@ export function getDashboardHTML(): string {
       options: chartOptions
     });
 
-    // Activity Chart
+    // Activity Chart — populate from real session history
     const actCtx = document.getElementById('activityChart').getContext('2d');
+    const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const actionsPerDay = [0, 0, 0, 0, 0, 0, 0];
+    const bugsPerDay    = [0, 0, 0, 0, 0, 0, 0];
     activityChart = new Chart(actCtx, {
       type: 'bar',
       data: {
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        labels: dayLabels,
         datasets: [{
-          label: 'Tests',
-          data: [0, 0, 0, 0, 0, 0, 0],
+          label: 'Actions',
+          data: actionsPerDay,
           backgroundColor: '#f97316'
         }, {
           label: 'Bugs',
-          data: [0, 0, 0, 0, 0, 0, 0],
+          data: bugsPerDay,
           backgroundColor: '#ef4444'
         }]
       },
       options: chartOptions
     });
+    // Seed activity chart from the sessions WS data when it arrives
+    window._refreshActivityChart = function(sessions) {
+      const a = [0,0,0,0,0,0,0];
+      const b = [0,0,0,0,0,0,0];
+      sessions.forEach(s => {
+        const d = s.started_at ? new Date(s.started_at).getDay() : -1;
+        if (d >= 0) { a[d] += s.total_actions || 0; b[d] += s.bugs_found || 0; }
+      });
+      activityChart.data.datasets[0].data = a;
+      activityChart.data.datasets[1].data = b;
+      activityChart.update('none');
+    };
 
-    // Error Chart
+    // Error / Success Chart — populated from real session data
     const errCtx = document.getElementById('errorChart').getContext('2d');
     errorChart = new Chart(errCtx, {
       type: 'doughnut',
       data: {
-        labels: ['Success', 'Warnings', 'Errors'],
+        labels: ['Passed', 'Bugs'],
         datasets: [{
-          data: [100, 0, 0],
-          backgroundColor: ['#22c55e', '#f59e0b', '#ef4444']
+          data: [100, 0],
+          backgroundColor: ['#22c55e', '#ef4444']
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
         plugins: {
-          legend: { 
+          legend: {
             position: 'right',
             labels: { color: '#8b98a8', font: { size: 11 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => \` \${ctx.label}: \${ctx.parsed}%\`
+            }
           }
         }
       }
     });
+    window._refreshErrorChart = function(sessions) {
+      const totalActions = sessions.reduce((s, r) => s + (r.total_actions || 0), 0);
+      const totalBugs    = sessions.reduce((s, r) => s + (r.bugs_found   || 0), 0);
+      const passed = totalActions > 0 ? Math.round(((totalActions - totalBugs) / totalActions) * 100) : 100;
+      const bugPct = 100 - passed;
+      errorChart.data.datasets[0].data = [passed, bugPct];
+      errorChart.update('none');
+    };
   }
 
   function switchChartTab(tab) {
@@ -1268,12 +1358,13 @@ export function getDashboardHTML(): string {
   }
 
   function switchAgentTab(tab) {
+    activeAgentTab = tab; // persist so updateAgents() knows not to overwrite
     // Find tabs in the panel containing agents-table
     const panel = document.getElementById('agents-table')?.closest('.panel');
     const agentsTabs = panel?.querySelectorAll('.tabs .tab');
     if (!agentsTabs) return;
     agentsTabs.forEach(t => t.classList.remove('active'));
-    
+
     if (tab === 'specialists') {
       agentsTabs[1]?.classList.add('active');
       // Show specialists data
@@ -1337,39 +1428,62 @@ export function getDashboardHTML(): string {
   // Hierarchy
   function updateHierarchy(agents) {
     const container = document.getElementById('hierarchy-container');
-    
+
+    // Node layout — positions are the CENTER of each node
     const agentTypes = {
-      'Main Agent': { x: 200, y: 30, color: '#f97316', class: 'main' },
-      'Browser Specialist': { x: 80, y: 120, color: '#22c55e', class: 'browser' },
-      'API Tester': { x: 200, y: 120, color: '#f59e0b', class: 'api' },
-      'Auth Specialist': { x: 320, y: 120, color: '#ef4444', class: 'auth' },
-      'UI Tester': { x: 80, y: 210, color: '#8b5cf6', class: 'ui' },
-      'Performance': { x: 200, y: 210, color: '#06b6d4', class: 'perf' },
-      'Security Scanner': { x: 320, y: 210, color: '#ec4899', class: 'security' }
+      'Main Agent':        { cx: 240, cy: 44,  class: 'main' },
+      'Browser Specialist':{ cx: 80,  cy: 140, class: 'browser' },
+      'API Tester':        { cx: 240, cy: 140, class: 'api' },
+      'Auth Specialist':   { cx: 400, cy: 140, class: 'auth' },
+      'UI Tester':         { cx: 80,  cy: 230, class: 'ui' },
+      'Performance':       { cx: 240, cy: 230, class: 'perf' },
+      'Security Scanner':  { cx: 400, cy: 230, class: 'security' },
     };
 
-    let html = '<div class="hierarchy-badge">● Main Agent</div>';
-    html += '<svg width="100%" height="100%" style="position:absolute;top:0;left:0;">';
-    
-    // Draw connections
-    html += '<line x1="240" y1="50" x2="120" y2="120" stroke="#333" stroke-width="2" stroke-dasharray="4"/>';
-    html += '<line x1="240" y1="50" x2="240" y2="120" stroke="#333" stroke-width="2" stroke-dasharray="4"/>';
-    html += '<line x1="240" y1="50" x2="360" y2="120" stroke="#333" stroke-width="2" stroke-dasharray="4"/>';
-    html += '<line x1="120" y1="140" x2="120" y2="210" stroke="#333" stroke-width="2" stroke-dasharray="4"/>';
-    html += '<line x1="240" y1="140" x2="240" y2="210" stroke="#333" stroke-width="2" stroke-dasharray="4"/>';
-    html += '<line x1="360" y1="140" x2="360" y2="210" stroke="#333" stroke-width="2" stroke-dasharray="4"/>';
-    
-    html += '</svg>';
+    // Build a lookup of active agents — match by keyword (partial name, case-insensitive)
+    // This is resilient to the actual agent names in the DB not matching exactly.
+    function findAgent(keyword) {
+      const kw = keyword.toLowerCase();
+      return agents.find(a => a.name && a.name.toLowerCase().includes(kw)) || null;
+    }
 
-    // Draw nodes
-    agents.forEach(agent => {
-      const config = agentTypes[agent.name];
-      if (config) {
-        const isActive = agent.status === 'running';
-        html += \`<div class="agent-node \${config.class}" style="left:\${config.x}px;top:\${config.y}px;opacity:\${isActive ? 1 : 0.5}">
-          \${isActive ? '●' : '○'} \${agent.name.split(' ')[0]}
-        </div>\`;
-      }
+    // SVG connection lines (z-index 1, under the nodes)
+    let html = \`<svg width="100%" height="100%" style="position:absolute;top:0;left:0;z-index:1;pointer-events:none;">
+      <line x1="240" y1="56"  x2="80"  y2="128" stroke="#2d3748" stroke-width="1.5" stroke-dasharray="4"/>
+      <line x1="240" y1="56"  x2="240" y2="128" stroke="#2d3748" stroke-width="1.5" stroke-dasharray="4"/>
+      <line x1="240" y1="56"  x2="400" y2="128" stroke="#2d3748" stroke-width="1.5" stroke-dasharray="4"/>
+      <line x1="80"  y1="152" x2="80"  y2="218" stroke="#2d3748" stroke-width="1.5" stroke-dasharray="4"/>
+      <line x1="240" y1="152" x2="240" y2="218" stroke="#2d3748" stroke-width="1.5" stroke-dasharray="4"/>
+      <line x1="400" y1="152" x2="400" y2="218" stroke="#2d3748" stroke-width="1.5" stroke-dasharray="4"/>
+    </svg>\`;
+
+    // Draw nodes — transform(-50%,-50%) centers them on (cx,cy)
+    // keyword = word to search for in agent.name (partial match)
+    const nodeKeywords = {
+      'Main Agent':         'main',
+      'Browser Specialist': 'browser',
+      'API Tester':         'api',
+      'Auth Specialist':    'auth',
+      'UI Tester':          'ui',
+      'Performance':        'perf',
+      'Security Scanner':   'security',
+    };
+    Object.entries(agentTypes).forEach(([name, cfg]) => {
+      const kw = nodeKeywords[name] || name.split(' ')[0].toLowerCase();
+      const matchedAgent = findAgent(kw);
+      const isActive = matchedAgent?.status === 'running';
+      // If at least one agent exists in DB, all nodes show at base opacity
+      const hasAnyAgent = agents.length > 0;
+      const opacity = matchedAgent
+        ? (isActive ? '1' : '0.55')
+        : (hasAnyAgent ? '0.3' : '0.2');
+      const dot = isActive ? '●' : (matchedAgent ? '○' : '·');
+      const title = matchedAgent ? \`\${matchedAgent.name} [\${matchedAgent.status}]\` : name;
+      html += \`<div class="agent-node \${cfg.class}"
+        style="left:\${cfg.cx}px;top:\${cfg.cy}px;transform:translate(-50%,-50%);opacity:\${opacity}"
+        title="\${title}">
+        \${dot} \${name.split(' ')[0]}
+      </div>\`;
     });
 
     container.innerHTML = html;
@@ -1582,15 +1696,16 @@ export function getDashboardHTML(): string {
   async function loadInitialData() {
     try {
       const creds = { credentials: 'include' };
-      const [sessionsRes, bugsRes, tasksRes, issuesRes, statusRes, agentsRes, metricsRes, sessionsHistRes] = await Promise.all([
+      const [sessionsRes, bugsRes, tasksRes, issuesRes, statusRes, agentsRes, metricsRes, sessionsHistRes, kanbanRes] = await Promise.all([
         fetch('/api/sessions?limit=1', creds),
         fetch('/api/bugs', creds),
         fetch('/api/tasks', creds),
         fetch('/api/issues', creds),
         fetch('/api/status', creds),
-        fetch('/api/dynamic-agents', creds),
+        fetch('/api/agents', creds),          // DB-backed agents (always populated)
         fetch('/api/metrics', creds),
         fetch('/api/sessions?limit=7', creds),
+        fetch('/api/kanban', creds),           // real kanban ticket count
       ]);
 
       const sessions = await sessionsRes.json();
@@ -1601,14 +1716,10 @@ export function getDashboardHTML(): string {
       const agents = await agentsRes.json();
       const metrics = await metricsRes.json();
       const sessionsHistory = await sessionsHistRes.json();
+      const kanbanTickets = await kanbanRes.json();
 
-      // Update status indicator
+      // Update status indicator — also syncs run button via updateStatus()
       updateStatus(status);
-      
-      // Update run button state based on agent status
-      if (status.running) {
-        updateRunButton(true);
-      }
 
       // Update metrics cards
       if (sessions.length > 0) {
@@ -1683,9 +1794,11 @@ export function getDashboardHTML(): string {
       updateTasks(tasks);
       updateIssues(issues);
 
-      // Kanban badge = open bugs
-      const openBugs = bugs.filter(b => b.status === 'open' || b.status === 'in-progress');
-      document.getElementById('kanban-count').textContent = openBugs.length || 0;
+      // Kanban badge = tickets not yet done
+      const openTickets = Array.isArray(kanbanTickets)
+        ? kanbanTickets.filter(t => t.column !== 'done').length
+        : bugs.filter(b => b.status === 'open' || b.status === 'in-progress').length;
+      document.getElementById('kanban-count').textContent = String(openTickets);
 
       // Seed activity feed with recent actions from latest session
       if (sessions.length > 0) {

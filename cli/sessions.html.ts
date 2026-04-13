@@ -318,8 +318,27 @@ export function getSessionsHTML(): string {
       window.location.href = '/?session=' + id;
     }
 
+    // ── WebSocket for realtime session updates ─────────────────────────────────
+    function initWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(protocol + '//' + window.location.host);
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'sessions' && Array.isArray(msg.data)) {
+            sessions = msg.data;
+            renderSessions();
+          }
+        } catch {}
+      };
+
+      ws.onclose = () => setTimeout(initWebSocket, 3000);
+    }
+
     // Load on page load
     loadSessions();
+    initWebSocket();
   </script>
 </body>
 </html>`;

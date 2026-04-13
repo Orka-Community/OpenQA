@@ -88,7 +88,13 @@ const createAgentSchema = z.object({
 
 const config = new ConfigManager();
 const cfg = config.getConfigSync();
-const db = new OpenQADatabase(cfg.database?.path || './data/openqa.json');
+// Always use the same JSON path as ConfigManager so config reads/writes are consistent
+const dbPath = (() => {
+  const raw = process.env.DB_PATH || cfg.database?.path || './data/openqa.json';
+  // ConfigManager uses LowDB (JSON) — normalize .db → .json to avoid path split
+  return raw.endsWith('.db') ? raw.replace(/\.db$/, '.json') : raw;
+})();
+const db = new OpenQADatabase(dbPath);
 
 const app = express();
 
@@ -219,21 +225,21 @@ app.post('/api/agent/start', async (_req, res) => {
   }
 
   try {
-    // Build SaaS config from individual keys (as saved by /api/config)
-    const saasUrl = await db.getConfig('saas.url');
+    // Read saas config through ConfigManager so env vars + DB config are merged
+    const saasUrl = await config.get('saas.url');
     if (!saasUrl) {
-      return res.status(400).json({ error: 'SaaS not configured. Please configure target URL first.' });
+      return res.status(400).json({ error: 'Target URL not configured. Go to /config to set the target application URL.' });
     }
 
     const saasConfig = {
-      name: await db.getConfig('saas.name') || 'Target Application',
-      description: await db.getConfig('saas.description') || 'Application to test',
+      name: await config.get('saas.name') || 'Target Application',
+      description: await config.get('saas.description') || 'Application to test',
       url: saasUrl,
       auth: {
-        type: (await db.getConfig('saas.authType') || 'none') as 'none' | 'basic' | 'oauth' | 'session',
+        type: ((await config.get('saas.authType')) || 'none') as 'none' | 'basic' | 'oauth' | 'session',
         credentials: {
-          username: await db.getConfig('saas.username') || '',
-          password: await db.getConfig('saas.password') || ''
+          username: await config.get('saas.username') || '',
+          password: await config.get('saas.password') || ''
         }
       }
     };
@@ -439,11 +445,22 @@ app.get('/api/tests', (_req, res) => {
   res.json(agent.getTests());
 });
 
+// In-memory dynamic agents (created at runtime by the live agent)
 app.get('/api/dynamic-agents', (_req, res) => {
   if (!agent) {
     return res.json([]);
   }
   res.json(agent.getAgents());
+});
+
+// DB-backed agents — derived from session actions, always available
+app.get('/api/agents', async (_req, res) => {
+  try {
+    const agents = await db.getActiveAgents();
+    res.json(agents);
+  } catch (error: unknown) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
 });
 
 const server = app.listen(cfg.web.port, cfg.web.host, () => {
@@ -456,21 +473,132 @@ server.on('upgrade', (request, socket, head) => {
   });
 });
 
-wss.on('connection', (ws) => {
+wss.on('connection', async (ws) => {
   logger.debug('WebSocket client connected');
 
-  const interval = setInterval(() => {
+  // ── Push initial snapshot from DB immediately on connect ──────────────────
+  try {
+    const [sessions, tasks, issues] = await Promise.all([
+      db.getRecentSessions(10),
+      db.getCurrentTasks(),
+      db.getCurrentIssues(),
+    ]);
+    const currentSession = sessions[0];
+    const saasUrl = await config.get('saas.url');
+
     if (ws.readyState === ws.OPEN) {
-      const status = agent?.getStats() || { isRunning: false };
-      ws.send(JSON.stringify({ type: 'status', data: status }));
-      
-      // Send agent stats
+      ws.send(JSON.stringify({
+        type: 'status',
+        data: {
+          isRunning: agent?.getStats().isRunning ?? (currentSession?.status === 'running'),
+          target: saasUrl || 'Not configured',
+          sessionId: currentSession?.id || null,
+        },
+      }));
+      ws.send(JSON.stringify({ type: 'sessions', data: sessions }));
+      ws.send(JSON.stringify({ type: 'tasks', data: tasks }));
+      ws.send(JSON.stringify({ type: 'issues', data: issues }));
+
+      // Kanban badge + DB agents
+      const [kanbanTickets, dbAgents] = await Promise.all([
+        db.getKanbanTickets(),
+        db.getActiveAgents(),
+      ]);
+      const openTickets = kanbanTickets.filter(t => t.column !== 'done').length;
+      ws.send(JSON.stringify({ type: 'kanban-stats', data: { count: openTickets } }));
+      ws.send(JSON.stringify({ type: 'agents', data: dbAgents }));
       if (agent) {
-        const agents = agent.getAgents();
-        ws.send(JSON.stringify({ type: 'agents', data: agents }));
+        ws.send(JSON.stringify({ type: 'dynamic-agents', data: agent.getAgents() }));
+      }
+
+      if (currentSession) {
+        ws.send(JSON.stringify({
+          type: 'session',
+          data: {
+            active_agents: dbAgents.filter(a => a.status === 'running').length,
+            total_actions: currentSession.total_actions || 0,
+            bugs_found: currentSession.bugs_found || 0,
+            success_rate: currentSession.total_actions > 0
+              ? Math.round(((currentSession.total_actions - (currentSession.bugs_found || 0)) / currentSession.total_actions) * 100)
+              : 0,
+            timestamp: new Date().toISOString(),
+          },
+        }));
       }
     }
-  }, 2000);
+  } catch (e) {
+    logger.warn('Failed to push initial WS snapshot', { error: e instanceof Error ? e.message : String(e) });
+  }
+
+  // ── Periodic refresh every 3 s ─────────────────────────────────────────────
+  const interval = setInterval(async () => {
+    if (ws.readyState !== ws.OPEN) return;
+
+    try {
+      // Agent runtime stats — include target URL so dashboard always shows truth
+      const saasUrl = await config.get('saas.url');
+      // If URL is now available but agent isn't configured yet, auto-configure
+      if (agent && saasUrl && !agent.getSaaSConfig()?.url) {
+        try {
+          agent.configureSaaS({
+            name: await config.get('saas.name') || 'Target Application',
+            description: await config.get('saas.description') || 'Application to test',
+            url: saasUrl,
+            auth: {
+              type: ((await config.get('saas.authType')) || 'none') as 'none' | 'basic' | 'oauth' | 'session',
+              credentials: {
+                username: await config.get('saas.username') || '',
+                password: await config.get('saas.password') || '',
+              },
+            },
+          });
+        } catch { /* non-critical */ }
+      }
+      const status = { ...(agent?.getStats() || { isRunning: false }), target: saasUrl || 'Not configured' };
+      ws.send(JSON.stringify({ type: 'status', data: status }));
+
+      // DB data refresh
+      const [sessions, tasks, issues, kanbanTickets, dbAgents] = await Promise.all([
+        db.getRecentSessions(10),
+        db.getCurrentTasks(),
+        db.getCurrentIssues(),
+        db.getKanbanTickets(),
+        db.getActiveAgents(),
+      ]);
+      ws.send(JSON.stringify({ type: 'sessions', data: sessions }));
+
+      // Push session metrics every 3s so the Performance chart stays live
+      const latest = sessions[0];
+      if (latest) {
+        ws.send(JSON.stringify({
+          type: 'session',
+          data: {
+            active_agents: dbAgents.filter(a => a.status === 'running').length,
+            total_actions: latest.total_actions || 0,
+            bugs_found: latest.bugs_found || 0,
+            success_rate: latest.total_actions > 0
+              ? Math.round(((latest.total_actions - (latest.bugs_found || 0)) / latest.total_actions) * 100)
+              : 0,
+            timestamp: new Date().toISOString(),
+          },
+        }));
+      }
+
+      ws.send(JSON.stringify({ type: 'tasks', data: tasks }));
+      ws.send(JSON.stringify({ type: 'issues', data: issues }));
+
+      // Kanban badge
+      const open = kanbanTickets.filter(t => t.column !== 'done').length;
+      ws.send(JSON.stringify({ type: 'kanban-stats', data: { count: open } }));
+
+      // DB agents drive the hierarchy/agents panel (consistent shape)
+      ws.send(JSON.stringify({ type: 'agents', data: dbAgents }));
+      // Live dynamic-agents (different type) go to their own message
+      if (agent) {
+        ws.send(JSON.stringify({ type: 'dynamic-agents', data: agent.getAgents() }));
+      }
+    } catch {/* ignore transient errors */}
+  }, 3000);
 
   ws.on('close', () => {
     clearInterval(interval);
@@ -543,19 +671,19 @@ async function ensureAgent(): Promise<OpenQAAgentV2> {
     agent = new OpenQAAgentV2();
     setupAgentEvents(agent);
     
-    // Auto-configure SaaS from database if available
+    // Auto-configure SaaS — read via ConfigManager so env vars + DB are merged
     try {
-      const saasUrl = await db.getConfig('saas.url');
+      const saasUrl = await config.get('saas.url');
       if (saasUrl) {
         const saasConfig = {
-          name: await db.getConfig('saas.name') || 'Target Application',
-          description: await db.getConfig('saas.description') || 'Application to test',
+          name: await config.get('saas.name') || 'Target Application',
+          description: await config.get('saas.description') || 'Application to test',
           url: saasUrl,
           auth: {
-            type: (await db.getConfig('saas.authType') || 'none') as 'none' | 'basic' | 'oauth' | 'session',
+            type: ((await config.get('saas.authType')) || 'none') as 'none' | 'basic' | 'oauth' | 'session',
             credentials: {
-              username: await db.getConfig('saas.username') || '',
-              password: await db.getConfig('saas.password') || ''
+              username: await config.get('saas.username') || '',
+              password: await config.get('saas.password') || ''
             }
           }
         };
@@ -563,7 +691,7 @@ async function ensureAgent(): Promise<OpenQAAgentV2> {
         logger.info('Agent auto-configured with SaaS settings', { url: saasUrl });
       }
     } catch (e) {
-      logger.warn('No SaaS config found in database, agent not configured');
+      logger.warn('No SaaS config found, agent not auto-configured');
     }
   }
   return agent;
@@ -581,6 +709,18 @@ function broadcast(message: Record<string, unknown>) {
 // Initialize agent on startup (loads SaaS config from database)
 (async () => {
   try {
+    // On startup, mark any lingering 'running' sessions as 'stopped'
+    try {
+      const staleSessions = await db.getRecentSessions(200);
+      const stale = staleSessions.filter((s: { status: string }) => s.status === 'running');
+      for (const s of stale) {
+        await db.updateSession(s.id, { status: 'completed', ended_at: new Date().toISOString() });
+      }
+      if (stale.length > 0) logger.info(`Marked ${stale.length} stale sessions as stopped on startup`);
+    } catch (cleanupErr) {
+      logger.warn('Failed to cleanup stale sessions', { error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr) });
+    }
+
     // Always create agent to load SaaS config (even if not auto-starting)
     await ensureAgent();
     logger.info('Agent initialized with SaaS configuration');

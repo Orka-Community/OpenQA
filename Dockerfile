@@ -25,8 +25,9 @@ WORKDIR /app
 RUN apk upgrade --no-cache
 
 # 2. Only the minimal libs required by Playwright's Chromium at runtime
-#    ⚠️  No `apk add chromium` — we use Playwright's own binary instead
+#    su-exec lets the entrypoint fix volume permissions then drop to openqa user
 RUN apk add --no-cache \
+    su-exec \
     nss \
     freetype \
     harfbuzz \
@@ -45,14 +46,19 @@ RUN npx playwright install chromium
 # 5. Copy compiled app
 COPY --from=builder /app/dist ./dist
 
-# 6. Drop root — run as unprivileged user (defense-in-depth)
+# 6. Create unprivileged user — do NOT set USER here; the entrypoint will
+#    fix volume permissions (needs root) then exec as openqa via su-exec
 RUN addgroup -S openqa && adduser -S openqa -G openqa && \
     chown -R openqa:openqa /app /ms-playwright
-USER openqa
 
-# 7. Configurable port (default: 4242)
+# 7. Entrypoint script fixes /data volume permissions then drops to openqa
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# 8. Configurable port (default: 4242)
 ENV WEB_PORT=4242
 ENV WEB_HOST=0.0.0.0
 EXPOSE ${WEB_PORT}
 
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["node", "dist/cli/daemon.js"]

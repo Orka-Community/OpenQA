@@ -314,7 +314,26 @@ export function getCoverageHTML(): string {
       alert('Coverage report export coming soon!');
     }
 
+    // ── WebSocket for realtime coverage updates ────────────────────────────────
+    function initWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(protocol + '//' + window.location.host);
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          // Refresh coverage whenever sessions or status change
+          if (msg.type === 'sessions' || msg.type === 'session' || msg.type === 'status') {
+            loadCoverage();
+          }
+        } catch {}
+      };
+
+      ws.onclose = () => setTimeout(initWebSocket, 3000);
+    }
+
     loadCoverage();
+    initWebSocket();
   </script>
 </body>
 </html>`;

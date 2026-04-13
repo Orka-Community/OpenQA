@@ -5,7 +5,7 @@ services:
     build: .
     container_name: openqa
     ports:
-      - "3000:3000"
+      - "4242:4242"
     environment:
       - NODE_ENV=production
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
@@ -21,16 +21,17 @@ services:
       - GITHUB_REPO=${GITHUB_REPO}
       - AGENT_INTERVAL_MS=${AGENT_INTERVAL_MS:-3600000}
       - AGENT_MAX_ITERATIONS=${AGENT_MAX_ITERATIONS:-20}
-      - AGENT_AUTO_START=${AGENT_AUTO_START:-true}
-      - WEB_PORT=3000
+      - AGENT_AUTO_START=${AGENT_AUTO_START:-false}
+      - WEB_PORT=4242
       - WEB_HOST=0.0.0.0
-      - DB_PATH=/data/openqa.db
+      - DB_PATH=/data/openqa.json
+      - DATA_PATH=/data
     volumes:
       - openqa-data:/data
       - ./screenshots:/data/screenshots
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/status"]
+      test: ["CMD", "curl", "-f", "http://localhost:4242/health"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -327,7 +327,57 @@ export function getTestsHTML(): string {
              d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     }
 
+    // ── WebSocket for realtime updates ─────────────────────────────────────────
+    function initWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(protocol + '//' + window.location.host);
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'sessions') {
+            // Rebuild tests from the freshest session list
+            buildTestsFromSessions(msg.data || []);
+          } else if (msg.type === 'session') {
+            // Single-session stats update — refresh full list
+            loadTests();
+          }
+        } catch {}
+      };
+
+      ws.onclose = () => setTimeout(initWebSocket, 3000);
+    }
+
+    function buildTestsFromSessions(sessions) {
+      // Fetch bugs to correlate failures, then render
+      fetch('/api/bugs', { credentials: 'include' })
+        .then(r => r.json())
+        .then(bugs => {
+          tests = sessions.flatMap((session, idx) => {
+            const testCount = session.total_actions || 0;
+            const bugCount = session.bugs_found || 0;
+            const sessionTests = [];
+            for (let i = 0; i < Math.min(testCount, 10); i++) {
+              const isFailed = i < bugCount;
+              sessionTests.push({
+                id: session.id + '-' + i,
+                name: isFailed ? (bugs[i]?.title || 'Test ' + (i + 1)) : 'Action ' + (i + 1),
+                suite: 'Session ' + (idx + 1),
+                status: isFailed ? 'failed' : 'passed',
+                duration: Math.floor(Math.random() * 5000) + 100,
+                lastRun: session.started_at
+              });
+            }
+            return sessionTests;
+          });
+          updateStats();
+          renderTests();
+        })
+        .catch(() => {});
+    }
+
     loadTests();
+    initWebSocket();
   </script>
 </body>
 </html>`;

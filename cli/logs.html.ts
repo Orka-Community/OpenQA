@@ -243,6 +243,18 @@ export function getLogsHTML(): string {
             addLog(data.data.type || 'info', data.data.message);
           } else if (data.type === 'log') {
             addLog(data.level || 'info', data.msg || data.message);
+          } else if (data.type === 'sessions' && Array.isArray(data.data)) {
+            // Update session summary log entries
+            data.data.slice(0, 3).forEach((s) => {
+              const shortId = s.id.startsWith('session_') ? s.id.substring(8, 20) : s.id.substring(0, 12);
+              if (s.status === 'running') {
+                addLog('info', \`Session \${shortId} [running] — \${s.total_actions || 0} actions, \${s.bugs_found || 0} bugs (live)\`);
+              }
+            });
+          } else if (data.type === 'status') {
+            if (data.data?.isRunning) {
+              addLog('info', 'Agent is running — session active');
+            }
           }
         } catch {}
       };
@@ -366,7 +378,11 @@ export function getLogsHTML(): string {
       .then(r => r.json())
       .then(sessions => {
         sessions.forEach(s => {
-          addLog('info', 'Session ' + s.id.substring(0, 8) + ' - ' + (s.total_actions || 0) + ' actions, ' + (s.bugs_found || 0) + ' bugs');
+          // Show the unique part after the "session_" prefix (or last 12 chars)
+          const shortId = s.id.startsWith('session_') ? s.id.substring(8, 20) : s.id.substring(0, 12);
+          const status = s.status || 'completed';
+          const started = s.started_at ? new Date(s.started_at).toLocaleTimeString() : '';
+          addLog('info', \`Session \${shortId} [\${status}] — \${s.total_actions || 0} actions, \${s.bugs_found || 0} bugs\${started ? ' @ ' + started : ''}\`);
         });
       })
       .catch(() => {});

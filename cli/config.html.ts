@@ -198,7 +198,8 @@ export function getConfigHTML(cfg: any): string {
       </div>
 
       <div class="actions">
-        <button class="btn-sm btn-ghost" onclick="testConnection()">Test Connection</button>
+        <button class="btn-sm btn-ghost" id="btn-test-conn" onclick="testConnection()">Test Connection</button>
+        <button class="btn-sm btn-ghost" id="btn-test-llm" onclick="testLLM()">Test LLM Key</button>
         <button class="btn-sm btn-ghost" onclick="resetConfig()">Reset to Defaults</button>
         <div id="message"></div>
       </div>
@@ -247,28 +248,93 @@ export function getConfigHTML(cfg: any): string {
   }
 
   async function testConnection() {
-    showMessage('Testing connection…', 'success');
-    // Read the target URL from the saas.url field if present
-    const urlField = document.querySelector('[name="saas.url"]') || document.querySelector('[data-key="saas.url"]');
-    const url = urlField ? urlField.value : '';
+    const url = document.getElementById('saas_url').value.trim();
     if (!url) {
       showMessage('Enter a target URL first', 'error');
       return;
     }
+
+    const authType = document.getElementById('saas_authType').value;
+    const username = document.getElementById('saas_username').value.trim();
+    const password = document.getElementById('saas_password').value;
+
+    const btn = document.getElementById('btn-test-conn');
+    btn.textContent = 'Testing…';
+    btn.disabled = true;
+    showMessage('Testing connection…', 'success');
+
     try {
       const response = await fetch('/api/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ url })
+        body: JSON.stringify({ url, authType, username, password })
       });
-      const result = await response.json();
+      const r = await response.json();
+
+      const latencyStr = r.latency != null ? \` · \${r.latency}ms\` : '';
+      const authStr = r.authenticated ? ' (with auth)' : '';
+
+      if (r.success) {
+        showMessage(\`✓ \${r.message}\${authStr}\${latencyStr}\`, 'success');
+      } else {
+        // Give actionable hint per error category
+        const hints = {
+          timeout:      'Check the URL and your network.',
+          network_error:'Server may be down or the URL is wrong.',
+          auth_failed:  'Credentials are wrong or auth is required.',
+          forbidden:    'Server is reachable — check IP restrictions or credentials.',
+          not_found:    'URL path not found — check the base URL.',
+          server_error: 'Server-side error — the app may be down.',
+        };
+        const hint = hints[r.category] ? \` — \${hints[r.category]}\` : '';
+        showMessage(\`✗ \${r.message}\${hint}\${latencyStr}\`, 'error');
+      }
+    } catch (error) {
+      showMessage('Request failed: ' + error.message, 'error');
+    } finally {
+      btn.textContent = 'Test Connection';
+      btn.disabled = false;
+    }
+  }
+
+  async function testLLM() {
+    const provider = document.getElementById('llm_provider').value;
+    const apiKey = document.getElementById('llm_apiKey').value.trim();
+    const baseUrl = document.getElementById('llm_baseUrl').value.trim();
+
+    if (!provider) {
+      showMessage('Select a provider first', 'error');
+      return;
+    }
+    if (provider !== 'ollama' && !apiKey) {
+      showMessage('Enter an API key first', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('btn-test-llm');
+    btn.textContent = 'Testing…';
+    btn.disabled = true;
+    showMessage(\`Testing \${provider} key…\`, 'success');
+
+    try {
+      const response = await fetch('/api/test-llm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ provider, apiKey, baseUrl })
+      });
+      const r = await response.json();
+      const latencyStr = r.latency != null ? \` · \${r.latency}ms\` : '';
       showMessage(
-        result.success ? \`Connection successful (HTTP \${result.status})\` : \`Connection failed: \${result.error || 'unreachable'}\`,
-        result.success ? 'success' : 'error'
+        (r.success ? '✓ ' : '✗ ') + r.message + latencyStr,
+        r.success ? 'success' : 'error'
       );
     } catch (error) {
-      showMessage('Error: ' + error.message, 'error');
+      showMessage('Request failed: ' + error.message, 'error');
+    } finally {
+      btn.textContent = 'Test LLM Key';
+      btn.disabled = false;
     }
   }
 
@@ -318,6 +384,58 @@ export function getConfigHTML(cfg: any): string {
     el.className = 'message ' + type;
     setTimeout(() => { el.textContent = ''; el.className = ''; }, 5000);
   }
+
+  // ── Load fresh config from API on page load ──────────────────────────────────
+  // This overrides SSR values and ensures the form always shows the latest DB state.
+  function setVal(id, value) {
+    const el = document.getElementById(id);
+    if (!el || value == null || value === '') return;
+    if (el.tagName === 'SELECT') {
+      el.value = value;
+    } else if (el.type === 'checkbox') {
+      el.checked = !!value;
+    } else {
+      el.value = value;
+    }
+  }
+
+  async function loadConfig() {
+    try {
+      const res = await fetch('/api/config', { credentials: 'include' });
+      if (!res.ok) return;
+      const cfg = await res.json();
+
+      // SaaS
+      setVal('saas_url', cfg.saas?.url);
+      setVal('saas_authType', cfg.saas?.authType);
+      setVal('saas_username', cfg.saas?.username);
+      if (cfg.saas?.password) setVal('saas_password', cfg.saas.password);
+
+      // LLM
+      setVal('llm_provider', cfg.llm?.provider);
+      // Validate model: must not look like an email or API key
+      const model = cfg.llm?.model;
+      if (model && !model.includes('@') && model.length < 100) {
+        setVal('llm_model', model);
+      } else if (model) {
+        // Wrong data in DB — clear the field and warn
+        document.getElementById('llm_model').value = '';
+        console.warn('llm.model in DB contains invalid data, cleared:', model);
+      }
+      if (cfg.llm?.apiKey) setVal('llm_apiKey', cfg.llm.apiKey);
+      setVal('llm_baseUrl', cfg.llm?.baseUrl);
+
+      // Agent
+      setVal('agent_autoStart', cfg.agent?.autoStart);
+      if (cfg.agent?.intervalMs) setVal('agent_intervalMs', cfg.agent.intervalMs);
+      if (cfg.agent?.maxIterations) setVal('agent_maxIterations', cfg.agent.maxIterations);
+    } catch (e) {
+      console.error('Failed to reload config from API:', e);
+    }
+  }
+
+  // Load on page open so the form always reflects the latest DB state
+  loadConfig();
 </script>
 
 </body>

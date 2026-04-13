@@ -64,7 +64,11 @@ export class ConfigManager {
 
   private getDB(): OpenQADatabase {
     if (!this.db) {
-      this.db = new OpenQADatabase('./data/openqa.json');
+      // Mirror the same path resolution as daemon.ts so reads and writes go to the same file
+      const raw = process.env.DB_PATH || this.envConfig.database?.path || './data/openqa.json';
+      // ConfigManager always uses LowDB (JSON) — normalize .db → .json to stay on the same file
+      const resolved = raw.endsWith('.db') ? raw.replace(/\.db$/, '.json') : raw;
+      this.db = new OpenQADatabase(resolved);
     }
     return this.db;
   }
@@ -73,8 +77,12 @@ export class ConfigManager {
     const dbValue = await this.getDB().getConfig(key);
     if (dbValue) return dbValue;
 
+    // Re-read from process.env on every call so env vars saved at runtime
+    // (via the Env Variables page, which updates process.env) are visible
+    // without requiring a server restart.
+    const freshEnv = this.loadFromEnv();
     const keys = key.split('.');
-    let value: unknown = this.envConfig;
+    let value: unknown = freshEnv;
     for (const k of keys) {
       if (value && typeof value === 'object') {
         value = (value as Record<string, unknown>)[k];
@@ -91,7 +99,9 @@ export class ConfigManager {
 
   async getAll(): Promise<OpenQAConfig> {
     const dbConfig = await this.getDB().getAllConfig();
-    const merged = { ...this.envConfig };
+    // Always re-read from process.env so runtime env changes (Env Variables page)
+    // are visible immediately without a restart.
+    const merged = { ...this.loadFromEnv() };
 
     for (const [key, value] of Object.entries(dbConfig)) {
       const keys = key.split('.');

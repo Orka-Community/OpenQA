@@ -183,25 +183,178 @@ export function createApiRouter(db: OpenQADatabase, config: ConfigManager): Rout
     }
   });
 
-  // Test connection — verify a URL is reachable
+  // Test connection — verify a URL is reachable, with optional auth and latency
   router.post('/api/test-connection', async (req, res) => {
-    const urlStr = (req.body as { url?: string }).url;
+    const { url: urlStr, authType, username, password, token } =
+      req.body as { url?: string; authType?: string; username?: string; password?: string; token?: string };
+
     if (!urlStr) {
       return res.status(400).json({ success: false, error: 'url is required' });
     }
+
+    // Build auth headers
+    const headers: Record<string, string> = {};
+    if (authType === 'basic' && username) {
+      headers['Authorization'] = 'Basic ' + Buffer.from(`${username}:${password || ''}`).toString('base64');
+    } else if ((authType === 'bearer' || authType === 'session') && token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const start = Date.now();
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      const response = await fetch(urlStr, {
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      // Try HEAD first — many servers reject HEAD; fall back to GET
+      let response = await fetch(urlStr, {
         method: 'HEAD',
+        headers,
         signal: controller.signal,
         redirect: 'follow',
       });
+
+      if (response.status === 405) {
+        // HEAD not allowed — retry with GET
+        response = await fetch(urlStr, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+          redirect: 'follow',
+        });
+      }
+
       clearTimeout(timeoutId);
-      res.json({ success: true, status: response.status, ok: response.ok });
+      const latency = Date.now() - start;
+
+      // Categorise the result for actionable feedback
+      const status = response.status;
+      let category: string;
+      let message: string;
+
+      if (status >= 200 && status < 300) {
+        category = 'ok';
+        message = `Reachable — HTTP ${status}`;
+      } else if (status === 401) {
+        category = 'auth_failed';
+        message = `HTTP 401 — authentication required or credentials rejected`;
+      } else if (status === 403) {
+        category = 'forbidden';
+        message = `HTTP 403 — server reachable but access is forbidden`;
+      } else if (status === 404) {
+        category = 'not_found';
+        message = `HTTP 404 — URL not found on server`;
+      } else if (status >= 500) {
+        category = 'server_error';
+        message = `HTTP ${status} — server error`;
+      } else {
+        category = 'unexpected';
+        message = `HTTP ${status}`;
+      }
+
+      res.json({
+        success: status >= 200 && status < 400,
+        status,
+        category,
+        message,
+        latency,
+        authenticated: Object.keys(headers).length > 0,
+      });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      res.status(200).json({ success: false, error: message });
+      const latency = Date.now() - start;
+      const raw = err instanceof Error ? err.message : String(err);
+      const isTimeout = raw.includes('abort') || raw.includes('timeout');
+      res.json({
+        success: false,
+        category: isTimeout ? 'timeout' : 'network_error',
+        message: isTimeout
+          ? `Timeout after ${latency}ms — server unreachable or too slow`
+          : `Network error — ${raw}`,
+        latency,
+        authenticated: Object.keys(headers).length > 0,
+      });
+    }
+  });
+
+  // Test LLM provider — verify the API key is valid with a minimal call
+  router.post('/api/test-llm', async (req, res) => {
+    const { provider, apiKey, baseUrl } =
+      req.body as { provider?: string; apiKey?: string; baseUrl?: string };
+
+    if (!provider) {
+      return res.status(400).json({ success: false, message: 'provider is required' });
+    }
+
+    const start = Date.now();
+
+    try {
+      let result: { success: boolean; message: string };
+
+      switch (provider) {
+        case 'openai': {
+          if (!apiKey) {
+            result = { success: false, message: 'No API key provided' };
+            break;
+          }
+          const r = await fetch('https://api.openai.com/v1/models', {
+            headers: { Authorization: `Bearer ${apiKey}` },
+            signal: AbortSignal.timeout(8000),
+          });
+          result = r.ok
+            ? { success: true, message: `OpenAI key valid — HTTP ${r.status}` }
+            : { success: false, message: r.status === 401 ? 'Invalid API key (401)' : `OpenAI returned HTTP ${r.status}` };
+          break;
+        }
+
+        case 'anthropic': {
+          if (!apiKey) {
+            result = { success: false, message: 'No API key provided' };
+            break;
+          }
+          // Send a minimal message — 400 (bad request) still means the key is auth'd
+          const r = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01',
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+            signal: AbortSignal.timeout(10000),
+          });
+          // 200 or 400 (bad request) → key is accepted; 401 → invalid key
+          result = (r.status === 200 || r.status === 400)
+            ? { success: true, message: `Anthropic key valid — HTTP ${r.status}` }
+            : { success: false, message: r.status === 401 ? 'Invalid API key (401)' : `Anthropic returned HTTP ${r.status}` };
+          break;
+        }
+
+        case 'ollama': {
+          const url = (baseUrl || 'http://localhost:11434').replace(/\/$/, '');
+          const r = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(5000) });
+          if (r.ok) {
+            const data = await r.json() as { models?: unknown[] };
+            const count = data.models?.length ?? 0;
+            result = { success: true, message: `Ollama reachable — ${count} model(s) available` };
+          } else {
+            result = { success: false, message: `Ollama returned HTTP ${r.status}` };
+          }
+          break;
+        }
+
+        default:
+          result = { success: false, message: `Unknown provider: ${provider}` };
+      }
+
+      res.json({ ...result, latency: Date.now() - start, provider });
+    } catch (err: unknown) {
+      const raw = err instanceof Error ? err.message : String(err);
+      const isTimeout = raw.includes('abort') || raw.includes('timeout') || raw.includes('TimeoutError');
+      res.json({
+        success: false,
+        message: isTimeout ? `Timeout — ${provider} unreachable` : `Error — ${raw}`,
+        latency: Date.now() - start,
+        provider,
+      });
     }
   });
 
