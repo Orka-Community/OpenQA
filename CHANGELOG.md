@@ -1,5 +1,11 @@
 # @openqa/cli
 
+## 2.1.19
+
+### Patch Changes
+
+- chore: update package
+
 ## 2.1.18
 
 ### Patch Changes
