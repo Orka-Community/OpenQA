@@ -3,14 +3,19 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { ENV_VARIABLES, validateEnvValue, type EnvCategory } from './env-config.js';
 import { requireAuth, requireAdmin } from './auth/middleware.js';
 
 export function createEnvRouter(): Router {
   const router = Router();
-  const ENV_FILE_PATH = join(process.cwd(), '.env');
+  // Store the .env file inside DATA_PATH so it is persisted in the Docker volume.
+  // Falls back to <cwd>/data/.env for local dev (same directory as the DB).
+  const DATA_DIR = process.env.DATA_PATH || join(process.cwd(), 'data');
+  // Ensure the data directory exists (in case this code runs before the DB is created)
+  try { mkdirSync(DATA_DIR, { recursive: true }); } catch { /* already exists */ }
+  const ENV_FILE_PATH = join(DATA_DIR, 'openqa.env');
 
   // Helper: Read .env file
   function readEnvFile(): Record<string, string> {
