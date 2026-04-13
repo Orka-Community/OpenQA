@@ -18,6 +18,7 @@ import { getIssuesHTML } from './issues.html.js';
 import { getTestsHTML } from './tests.html.js';
 import { getCoverageHTML } from './coverage.html.js';
 import { getLogsHTML } from './logs.html.js';
+import { getSessionDetailHTML } from './session-detail.html.js';
 import { logger } from '../agent/logger.js';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
@@ -191,6 +192,10 @@ app.get('/kanban', authOrRedirect(db), (_req, res) => {
   res.send(getKanbanHTML());
 });
 
+app.get('/sessions/:sessionId', authOrRedirect(db), (req, res) => {
+  res.send(getSessionDetailHTML(req.params.sessionId));
+});
+
 app.get('/sessions', authOrRedirect(db), (_req, res) => {
   res.send(getSessionsHTML());
 });
@@ -245,7 +250,7 @@ app.post('/api/agent/start', async (_req, res) => {
     };
 
     const a = await ensureAgent();
-    a.configureSaaS(saasConfig); // Configure SaaS before running
+    await a.configureSaaS(saasConfig); // Configure SaaS before running
     a.runAutonomous().catch(console.error);
     res.json({ success: true });
   } catch (error) {
@@ -265,13 +270,13 @@ app.post('/api/agent/stop', (_req, res) => {
 // SaaS Configuration endpoints
 app.get('/api/saas-config', async (_req, res) => {
   const a = await ensureAgent();
-  res.json(a.getSaaSConfig() || {});
+  res.json(await a.getSaaSConfig() || {});
 });
 
 app.post('/api/saas-config', validate(saasConfigSchema), async (req, res) => {
   try {
     const a = await ensureAgent();
-    const config = a.configureSaaS(req.body);
+    const config = await a.configureSaaS(req.body);
     res.json(config);
   } catch (error: unknown) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
@@ -283,43 +288,43 @@ app.post('/api/saas-config/quick', validate(quickSetupSchema), async (req, res) 
 
   try {
     const a = await ensureAgent();
-    const config = a.quickSetup(name, description, url);
+    const config = await a.quickSetup(name, description, url);
     res.json(config);
   } catch (error: unknown) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
-app.post('/api/saas-config/directive', validate(directiveSchema), (req, res) => {
+app.post('/api/saas-config/directive', validate(directiveSchema), async (req, res) => {
   const { directive } = req.body;
   
   if (!agent) {
     return res.status(400).json({ error: 'Agent not initialized' });
   }
   
-  agent.addDirective(directive);
+  await agent.addDirective(directive);
   res.json({ success: true });
 });
 
-app.post('/api/saas-config/repository', validate(repositorySchema), (req, res) => {
+app.post('/api/saas-config/repository', validate(repositorySchema), async (req, res) => {
   const { url } = req.body;
   
   if (!agent) {
     return res.status(400).json({ error: 'Agent not initialized' });
   }
   
-  agent.setRepository(url);
+  await agent.setRepository(url);
   res.json({ success: true });
 });
 
-app.post('/api/saas-config/local-path', validate(localPathSchema), (req, res) => {
+app.post('/api/saas-config/local-path', validate(localPathSchema), async (req, res) => {
   const { path } = req.body;
   
   if (!agent) {
     return res.status(400).json({ error: 'Agent not initialized' });
   }
   
-  agent.setLocalPath(path);
+  await agent.setLocalPath(path);
   res.json({ success: true });
 });
 
@@ -463,6 +468,14 @@ app.get('/api/agents', async (_req, res) => {
   }
 });
 
+// Specialist agents (real-time status from Brain)
+app.get('/api/specialists', (_req, res) => {
+  if (!agent) {
+    return res.json([]);
+  }
+  res.json(agent.getSpecialistStatuses());
+});
+
 const server = app.listen(cfg.web.port, cfg.web.host, () => {
   logger.info('OpenQA Web UI running', { url: `http://${cfg.web.host}:${cfg.web.port}` });
 });
@@ -509,6 +522,7 @@ wss.on('connection', async (ws) => {
       ws.send(JSON.stringify({ type: 'agents', data: dbAgents }));
       if (agent) {
         ws.send(JSON.stringify({ type: 'dynamic-agents', data: agent.getAgents() }));
+        ws.send(JSON.stringify({ type: 'specialists', data: agent.getSpecialistStatuses() }));
       }
 
       if (currentSession) {
@@ -538,9 +552,11 @@ wss.on('connection', async (ws) => {
       // Agent runtime stats — include target URL so dashboard always shows truth
       const saasUrl = await config.get('saas.url');
       // If URL is now available but agent isn't configured yet, auto-configure
-      if (agent && saasUrl && !agent.getSaaSConfig()?.url) {
-        try {
-          agent.configureSaaS({
+      if (agent && saasUrl) {
+        const currentConfig = await agent.getSaaSConfig();
+        if (!currentConfig?.url) {
+          try {
+            await agent.configureSaaS({
             name: await config.get('saas.name') || 'Target Application',
             description: await config.get('saas.description') || 'Application to test',
             url: saasUrl,
@@ -552,18 +568,21 @@ wss.on('connection', async (ws) => {
               },
             },
           });
-        } catch { /* non-critical */ }
+          } catch { /* non-critical */ }
+        }
       }
       const status = { ...(agent?.getStats() || { isRunning: false }), target: saasUrl || 'Not configured' };
       ws.send(JSON.stringify({ type: 'status', data: status }));
 
       // DB data refresh
-      const [sessions, tasks, issues, kanbanTickets, dbAgents] = await Promise.all([
+      const [sessions, tasks, issues, kanbanTickets, dbAgents, coverage, coverageStats] = await Promise.all([
         db.getRecentSessions(10),
         db.getCurrentTasks(),
         db.getCurrentIssues(),
         db.getKanbanTickets(),
         db.getActiveAgents(),
+        db.getAggregatedCoverage(),
+        db.getCoverageStats(),
       ]);
       ws.send(JSON.stringify({ type: 'sessions', data: sessions }));
 
@@ -596,7 +615,13 @@ wss.on('connection', async (ws) => {
       // Live dynamic-agents (different type) go to their own message
       if (agent) {
         ws.send(JSON.stringify({ type: 'dynamic-agents', data: agent.getAgents() }));
+        ws.send(JSON.stringify({ type: 'tests', data: agent.getTests() }));
+        ws.send(JSON.stringify({ type: 'specialists', data: agent.getSpecialistStatuses() }));
       }
+      
+      // Coverage data
+      ws.send(JSON.stringify({ type: 'coverage', data: coverage }));
+      ws.send(JSON.stringify({ type: 'coverage-stats', data: coverageStats }));
     } catch {/* ignore transient errors */}
   }, 3000);
 
@@ -612,6 +637,8 @@ function setupAgentEvents(a: OpenQAAgentV2) {
     // Brain events
     'test-generated', 'agent-created', 'test-started', 'test-completed',
     'thinking', 'analysis-complete', 'session-complete',
+    // Specialist events
+    'specialist-created', 'specialist-started', 'specialist-completed', 'specialist-failed',
     // Git events
     'git-merge', 'git-pipeline-success',
     // Project runner events
@@ -631,10 +658,18 @@ function setupAgentEvents(a: OpenQAAgentV2) {
   });
   a.on('test-generated', (data) => {
     broadcast({ type: 'activity', data: { type: 'success', message: `Test generated: ${data?.type || 'unknown'}`, timestamp: new Date().toISOString() } });
+    // Broadcast updated tests list
+    broadcast({ type: 'tests', data: agent?.getTests() || [] });
+  });
+  a.on('test-started', (data) => {
+    broadcast({ type: 'activity', data: { type: 'info', message: `Test started: ${data?.name || 'unknown'}`, timestamp: new Date().toISOString() } });
+    broadcast({ type: 'tests', data: agent?.getTests() || [] });
   });
   a.on('test-completed', (data) => {
-    const passed = data?.passed ?? true;
+    const passed = data?.status === 'passed';
     broadcast({ type: 'activity', data: { type: passed ? 'success' : 'error', message: `Test ${passed ? 'passed' : 'failed'}: ${data?.name || ''}`, timestamp: new Date().toISOString() } });
+    // Broadcast updated tests list
+    broadcast({ type: 'tests', data: agent?.getTests() || [] });
   });
   a.on('analysis-complete', (_data) => {
     broadcast({ type: 'activity', data: { type: 'info', message: 'Analysis complete', timestamp: new Date().toISOString() } });
@@ -663,6 +698,26 @@ function setupAgentEvents(a: OpenQAAgentV2) {
   a.on('git-merge', (data) => {
     broadcast({ type: 'activity', data: { type: 'info', message: `Git merge detected on ${data?.branch}`, timestamp: new Date().toISOString() } });
   });
+  a.on('specialist-created', (data) => {
+    broadcast({ type: 'activity', data: { type: 'info', message: `Specialist created: ${data?.type}`, timestamp: new Date().toISOString() } });
+    broadcast({ type: 'specialists', data: agent?.getSpecialistStatuses() || [] });
+  });
+  a.on('specialist-started', (data) => {
+    broadcast({ type: 'activity', data: { type: 'info', message: `Specialist started: ${data?.type}`, timestamp: new Date().toISOString() } });
+    broadcast({ type: 'specialists', data: agent?.getSpecialistStatuses() || [] });
+  });
+  a.on('specialist-completed', async (data) => {
+    broadcast({ type: 'activity', data: { type: 'success', message: `Specialist completed: ${data?.type} (${data?.findings || 0} findings)`, timestamp: new Date().toISOString() } });
+    broadcast({ type: 'specialists', data: agent?.getSpecialistStatuses() || [] });
+    // Update metrics in real-time
+    await broadcastLatestMetrics();
+  });
+  a.on('specialist-failed', async (data) => {
+    broadcast({ type: 'activity', data: { type: 'error', message: `Specialist failed: ${data?.type}`, timestamp: new Date().toISOString() } });
+    broadcast({ type: 'specialists', data: agent?.getSpecialistStatuses() || [] });
+    // Update metrics in real-time
+    await broadcastLatestMetrics();
+  });
 }
 
 /** Ensure agent exists with events wired up and SaaS configured */
@@ -687,7 +742,7 @@ async function ensureAgent(): Promise<OpenQAAgentV2> {
             }
           }
         };
-        agent.configureSaaS(saasConfig);
+        await agent.configureSaaS(saasConfig);
         logger.info('Agent auto-configured with SaaS settings', { url: saasUrl });
       }
     } catch (e) {
@@ -704,6 +759,30 @@ function broadcast(message: Record<string, unknown>) {
       client.send(data);
     }
   });
+}
+
+async function broadcastLatestMetrics() {
+  try {
+    const sessions = await db.getRecentSessions(1);
+    const latest = sessions[0];
+    if (latest && agent) {
+      const dbAgents = await db.getActiveAgents();
+      broadcast({
+        type: 'session',
+        data: {
+          active_agents: dbAgents.filter(a => a.status === 'running').length,
+          total_actions: latest.total_actions || 0,
+          bugs_found: latest.bugs_found || 0,
+          success_rate: latest.total_actions > 0
+            ? Math.round(((latest.total_actions - (latest.bugs_found || 0)) / latest.total_actions) * 100)
+            : 0,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+  } catch (e) {
+    // Non-critical
+  }
 }
 
 // Initialize agent on startup (loads SaaS config from database)

@@ -41,7 +41,7 @@ export class OpenQAAgentV2 extends EventEmitter {
    * Configure the SaaS application to test
    * This is the main entry point for users
    */
-  configureSaaS(config: {
+  async configureSaaS(config: {
     name: string;
     description: string;
     url: string;
@@ -52,7 +52,7 @@ export class OpenQAAgentV2 extends EventEmitter {
       type: 'none' | 'basic' | 'oauth' | 'session';
       credentials?: { username: string; password: string };
     };
-  }): SaaSConfig {
+  }): Promise<SaaSConfig> {
     const saasConfig: SaaSConfig = {
       name: config.name,
       description: config.description,
@@ -66,14 +66,14 @@ export class OpenQAAgentV2 extends EventEmitter {
       } : { type: 'none' }
     };
 
-    return this.saasConfigManager.configure(saasConfig);
+    return await this.saasConfigManager.configure(saasConfig);
   }
 
   /**
    * Quick setup with minimal configuration
    */
-  quickSetup(name: string, description: string, url: string): SaaSConfig {
-    return this.saasConfigManager.configure(
+  async quickSetup(name: string, description: string, url: string): Promise<SaaSConfig> {
+    return await this.saasConfigManager.configure(
       createQuickConfig(name, description, url)
     );
   }
@@ -81,29 +81,29 @@ export class OpenQAAgentV2 extends EventEmitter {
   /**
    * Add a directive (instruction for the agent)
    */
-  addDirective(directive: string) {
-    this.saasConfigManager.addDirective(directive);
+  async addDirective(directive: string) {
+    await this.saasConfigManager.addDirective(directive);
   }
 
   /**
    * Set repository URL for code analysis
    */
-  setRepository(url: string) {
-    this.saasConfigManager.setRepoUrl(url);
+  async setRepository(url: string) {
+    await this.saasConfigManager.setRepoUrl(url);
   }
 
   /**
    * Set local path for code analysis
    */
-  setLocalPath(path: string) {
-    this.saasConfigManager.setLocalPath(path);
+  async setLocalPath(path: string) {
+    await this.saasConfigManager.setLocalPath(path);
   }
 
   /**
    * Initialize the brain and start analyzing
    */
   async initialize() {
-    const saasConfig = this.saasConfigManager.getConfig();
+    const saasConfig = await this.saasConfigManager.getConfig();
     if (!saasConfig) {
       throw new Error('SaaS not configured. Call configureSaaS() first.');
     }
@@ -131,7 +131,9 @@ export class OpenQAAgentV2 extends EventEmitter {
         apiKey: cfg.llm.apiKey || process.env.OPENAI_API_KEY || '',
         model: cfg.llm.model
       },
-      saasConfig
+      saasConfig,
+      this.sessionId,
+      cfg.github  // Pass GitHub config
     );
 
     this.browserTools = new BrowserTools(this.db, this.sessionId);
@@ -147,6 +149,20 @@ export class OpenQAAgentV2 extends EventEmitter {
     this.brain.on('agent-created', (agent: DynamicAgent) => {
       this.emit('agent-created', agent);
       log.info('Agent created', { name: agent.name });
+    });
+
+    // Forward specialist events
+    this.brain.on('specialist-created', (status) => {
+      this.emit('specialist-created', status);
+    });
+    this.brain.on('specialist-started', (status) => {
+      this.emit('specialist-started', status);
+    });
+    this.brain.on('specialist-completed', (data) => {
+      this.emit('specialist-completed', data);
+    });
+    this.brain.on('specialist-failed', (data) => {
+      this.emit('specialist-failed', data);
     });
 
     this.brain.on('test-started', (test: GeneratedTest) => {
@@ -183,6 +199,9 @@ export class OpenQAAgentV2 extends EventEmitter {
       localPath: saasConfig.localPath,
       directives: saasConfig.directives?.length ?? 0,
     });
+
+    // Auto-start GitListener if configured
+    await this.startGitListener();
   }
 
   /**
@@ -264,19 +283,49 @@ export class OpenQAAgentV2 extends EventEmitter {
       });
 
       this.gitListener.on('merge', async (event: GitEvent) => {
-        logger.info('Merge detected', { branch: event.branch });
+        logger.info('🔀 Merge detected - Starting automated QA tests', { 
+          branch: event.branch, 
+          commit: event.commit.substring(0, 7),
+          author: event.author,
+          message: event.message.substring(0, 50)
+        });
         this.emit('git-merge', event);
         
-        // Run autonomous session on merge
-        await this.runAutonomous();
+        try {
+          // Run autonomous session on merge
+          await this.runAutonomous();
+          logger.info('✅ Automated QA tests completed after merge');
+        } catch (error) {
+          logger.error('❌ Automated QA tests failed after merge', { 
+            error: error instanceof Error ? error.message : String(error) 
+          });
+        }
       });
 
       this.gitListener.on('pipeline-success', async (event: GitEvent) => {
-        logger.info('Pipeline success');
+        logger.info('✅ Pipeline success - Starting automated QA tests', {
+          commit: event.commit.substring(0, 7),
+          pipelineId: event.pipelineId
+        });
         this.emit('git-pipeline-success', event);
         
-        // Run autonomous session on successful deploy
-        await this.runAutonomous();
+        try {
+          // Run autonomous session on successful deploy
+          await this.runAutonomous();
+          logger.info('✅ Automated QA tests completed after pipeline success');
+        } catch (error) {
+          logger.error('❌ Automated QA tests failed after pipeline success', { 
+            error: error instanceof Error ? error.message : String(error) 
+          });
+        }
+      });
+      
+      this.gitListener.on('pipeline-failure', async (event: GitEvent) => {
+        logger.warn('⚠️  Pipeline failed - Skipping QA tests', {
+          commit: event.commit.substring(0, 7),
+          pipelineId: event.pipelineId
+        });
+        this.emit('git-pipeline-failure', event);
       });
 
       await this.gitListener.start();
@@ -351,16 +400,24 @@ export class OpenQAAgentV2 extends EventEmitter {
   }
 
   /**
+   * Get specialist agent statuses
+   */
+  getSpecialistStatuses() {
+    return this.brain?.getSpecialistStatuses() || [];
+  }
+
+  /**
    * Get statistics
    */
   getStats() {
-    const saasConfig = this.saasConfigManager.getConfig();
+    const saasConfig = this.saasConfigManager.getConfigSync();
     return {
       isRunning: this.isRunning,
       sessionId: this.sessionId,
       target: saasConfig?.url || null,
       saas: saasConfig,
       brain: this.brain?.getStats() || null,
+      specialists: this.brain?.getSpecialistStatuses() || [],
       gitListenerActive: !!this.gitListener
     };
   }
@@ -368,8 +425,8 @@ export class OpenQAAgentV2 extends EventEmitter {
   /**
    * Get the SaaS configuration
    */
-  getSaaSConfig(): SaaSConfig | null {
-    return this.saasConfigManager.getConfig();
+  async getSaaSConfig(): Promise<SaaSConfig | null> {
+    return await this.saasConfigManager.getConfig();
   }
 
   /**

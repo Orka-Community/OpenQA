@@ -10,7 +10,7 @@ COPY . .
 RUN npm run build
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
-FROM node:22-alpine
+FROM node:22-slim
 
 LABEL org.opencontainers.image.title="OpenQA" \
       org.opencontainers.image.description="Autonomous QA Testing Agent — powered by Orka" \
@@ -20,35 +20,47 @@ LABEL org.opencontainers.image.title="OpenQA" \
 
 WORKDIR /app
 
-# 1. Patch ALL Alpine packages (fixes musl, openssl, zlib, busybox CVEs)
-#    Must run BEFORE any apk add so new packages are also at latest
-RUN apk upgrade --no-cache
+# 1. Update system packages
+RUN apt-get update && apt-get upgrade -y
 
-# 2. Only the minimal libs required by Playwright's Chromium at runtime
-#    su-exec lets the entrypoint fix volume permissions then drop to openqa user
-RUN apk add --no-cache \
-    su-exec \
-    nss \
-    freetype \
-    harfbuzz \
+# 2. Install Playwright system dependencies and gosu
+RUN apt-get install -y \
+    gosu \
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libdbus-1-3 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2 \
+    libatspi2.0-0 \
+    fonts-liberation \
     ca-certificates \
-    ttf-freefont
+    && rm -rf /var/lib/apt/lists/*
 
 # 3. Production deps (includes the `playwright` npm package)
 COPY package*.json ./
 RUN npm ci --production
 
-# 4. Let Playwright download its own Chromium binary (kept up-to-date by Microsoft,
-#    not the outdated Alpine chromium package which carries the critical CVEs)
+# 4. Install Playwright browsers with all dependencies
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN npx playwright install chromium
+RUN npx playwright install --with-deps chromium
 
 # 5. Copy compiled app
 COPY --from=builder /app/dist ./dist
 
 # 6. Create unprivileged user — do NOT set USER here; the entrypoint will
-#    fix volume permissions (needs root) then exec as openqa via su-exec
-RUN addgroup -S openqa && adduser -S openqa -G openqa && \
+#    fix volume permissions (needs root) then exec as openqa via gosu
+RUN groupadd -r openqa && useradd -r -g openqa openqa && \
     chown -R openqa:openqa /app /ms-playwright
 
 # 7. Entrypoint script fixes /data volume permissions then drops to openqa

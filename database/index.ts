@@ -210,6 +210,13 @@ export class OpenQADatabase {
       ...action
     };
     this.db!.data.actions.push(newAction);
+    
+    // Increment total_actions in the session for real-time metrics
+    const session = this.db!.data.test_sessions.find(s => s.id === action.session_id);
+    if (session) {
+      session.total_actions = (session.total_actions || 0) + 1;
+    }
+    
     await this.db!.write();
     return newAction;
   }
@@ -230,6 +237,13 @@ export class OpenQADatabase {
       ...bug
     };
     this.db!.data.bugs.push(newBug);
+    
+    // Increment bugs_found in the session for real-time metrics
+    const session = this.db!.data.test_sessions.find(s => s.id === bug.session_id);
+    if (session) {
+      session.bugs_found = (session.bugs_found || 0) + 1;
+    }
+    
     await this.db!.write();
     return newBug;
   }
@@ -338,42 +352,82 @@ export class OpenQADatabase {
     if (currentSession && totalActions > 0) {
       const actions = await this.getSessionActions(currentSession.id);
       
-      // Group actions by type to determine which specialists are active
-      const actionTypes = actions.reduce((acc: Record<string, number>, action) => {
-        const type = action.type || 'unknown';
-        acc[type] = (acc[type] || 0) + 1;
-        return acc;
-      }, {});
+      // Group actions by specialist type (format: specialist:type:action)
+      const specialistActions = actions.filter(a => a.type?.startsWith('specialist:'));
+      const specialistStats: Record<string, { actions: number; status: string }> = {};
       
-      // Add specialists based on actual action types
-      if (actionTypes['navigate'] || actionTypes['click'] || actionTypes['screenshot']) {
-        agents.push({
-          name: 'Browser Specialist',
-          status: isRunning ? 'running' : 'idle',
-          purpose: 'UI navigation and interaction',
-          performance: Math.round(((actionTypes['navigate'] || 0) + (actionTypes['click'] || 0)) / totalActions * 100),
-          tasks: (actionTypes['navigate'] || 0) + (actionTypes['click'] || 0)
-        });
-      }
+      specialistActions.forEach(action => {
+        const parts = action.type!.split(':');
+        if (parts.length >= 2) {
+          const type = parts[1]; // e.g., 'form-tester', 'security-scanner'
+          if (!specialistStats[type]) {
+            specialistStats[type] = { actions: 0, status: 'idle' };
+          }
+          specialistStats[type].actions++;
+          
+          // Determine status based on action type
+          if (parts[2] === 'start') specialistStats[type].status = 'running';
+          if (parts[2] === 'complete' || parts[2] === 'failed') specialistStats[type].status = 'idle';
+        }
+      });
       
-      if (actionTypes['api_call'] || actionTypes['request']) {
-        agents.push({
-          name: 'API Tester',
-          status: isRunning ? 'running' : 'idle',
-          purpose: 'API endpoint testing',
-          performance: Math.round((actionTypes['api_call'] || actionTypes['request'] || 0) / totalActions * 100),
-          tasks: actionTypes['api_call'] || actionTypes['request'] || 0
-        });
-      }
+      // Add each specialist as an agent
+      const nameMap: Record<string, string> = {
+        'form-tester': 'Browser Specialist',
+        'security-scanner': 'Security Scanner',
+        'component-tester': 'UI Tester',
+        'api-tester': 'API Tester',
+        'auth-tester': 'Auth Specialist',
+        'navigation-tester': 'Browser Specialist'
+      };
       
-      if (actionTypes['auth'] || actionTypes['login']) {
+      Object.entries(specialistStats).forEach(([type, stats]) => {
         agents.push({
-          name: 'Auth Specialist',
-          status: isRunning ? 'running' : 'idle',
-          purpose: 'Authentication testing',
-          performance: Math.round((actionTypes['auth'] || actionTypes['login'] || 0) / totalActions * 100),
-          tasks: actionTypes['auth'] || actionTypes['login'] || 0
+          name: nameMap[type] || type,
+          status: stats.status,
+          purpose: `${type} specialist`,
+          performance: stats.actions > 0 ? Math.min(100, stats.actions * 10) : 0,
+          tasks: stats.actions
         });
+      });
+      
+      // Fallback: Add generic specialists based on other action types if no specialist actions
+      if (specialistActions.length === 0) {
+        const actionTypes = actions.reduce((acc: Record<string, number>, action) => {
+          const type = action.type || 'unknown';
+          acc[type] = (acc[type] || 0) + 1;
+          return acc;
+        }, {});
+        
+        if (actionTypes['navigate'] || actionTypes['click'] || actionTypes['screenshot']) {
+          agents.push({
+            name: 'Browser Specialist',
+            status: isRunning ? 'running' : 'idle',
+            purpose: 'UI navigation and interaction',
+            performance: Math.round(((actionTypes['navigate'] || 0) + (actionTypes['click'] || 0)) / totalActions * 100),
+            tasks: (actionTypes['navigate'] || 0) + (actionTypes['click'] || 0)
+          });
+        }
+        
+        if (actionTypes['api_call'] || actionTypes['request']) {
+          agents.push({
+            name: 'API Tester',
+            status: isRunning ? 'running' : 'idle',
+            purpose: 'API endpoint testing',
+            performance: Math.round((actionTypes['api_call'] || actionTypes['request'] || 0) / totalActions * 100),
+            tasks: actionTypes['api_call'] || actionTypes['request'] || 0
+          });
+        }
+        
+        if (actionTypes['auth'] || actionTypes['login']) {
+          agents.push({
+            name: 'Auth Specialist',
+            status: isRunning ? 'running' : 'idle',
+            purpose: 'Authentication testing',
+            performance: Math.round((actionTypes['auth'] || actionTypes['login'] || 0) / totalActions * 100),
+            tasks: actionTypes['auth'] || actionTypes['login'] || 0
+          });
+        }
       }
     }
     
@@ -593,7 +647,42 @@ export class OpenQADatabase {
     await this.ensureInitialized();
     const coverage = this.db!.data.coverage;
     
-    // Aggregate by unique paths
+    // If coverage table is empty, extract from specialist actions
+    if (coverage.length === 0) {
+      const sessions = await this.getRecentSessions(1);
+      if (sessions.length > 0) {
+        const session = sessions[0];
+        const actions = await this.getSessionActions(session.id);
+        const allBugs = await this.getAllBugs();
+        const bugs = allBugs.filter(b => b.session_id === session.id);
+        
+        // Count specialist actions
+        const specialistActions = actions.filter(a => a.type?.startsWith('specialist:'));
+        const formActions = specialistActions.filter(a => a.type?.includes('form-tester'));
+        const apiActions = specialistActions.filter(a => a.type?.includes('api-tester'));
+        
+        // Extract unique pages from session metadata or target URL
+        const pages = new Set<string>();
+        if (session.metadata) {
+          try {
+            const meta = typeof session.metadata === 'string' ? JSON.parse(session.metadata) : session.metadata;
+            if (meta.appUrl) pages.add(meta.appUrl);
+          } catch {}
+        }
+        
+        return {
+          totalPages: Math.max(1, pages.size),
+          totalVisits: specialistActions.filter(a => a.type?.endsWith(':start')).length,
+          totalActions: session.total_actions || actions.length,
+          totalForms: Math.floor(formActions.length / 3), // Estimate: ~3 actions per form
+          totalApiCalls: Math.floor(apiActions.length / 2), // Estimate: ~2 actions per API call
+          totalIssues: bugs.length,
+          pagesCovered: Array.from(pages),
+        };
+      }
+    }
+    
+    // Original logic for when coverage table is populated
     const pathStats = new Map<string, CoverageEntry>();
     coverage.forEach(c => {
       const existing = pathStats.get(c.path);

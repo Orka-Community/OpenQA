@@ -260,7 +260,7 @@ export function getDashboardHTML(): string {
 
     .metric-value {
       font-size: 36px;
-      font-weight: 800;
+      font-weight: 600;
       color: var(--text-1);
       line-height: 1;
       margin-bottom: 8px;

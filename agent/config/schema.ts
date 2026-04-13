@@ -4,7 +4,7 @@ export const llmConfigSchema = z.object({
   provider: z.enum(['openai', 'anthropic', 'ollama']).default('openai'),
   apiKey: z.string().optional(),
   model: z.string().optional(),
-  baseUrl: z.string().url().optional(),
+  baseUrl: z.string().url().optional().or(z.literal('')),
 });
 
 export const saasConfigSchema = z.object({

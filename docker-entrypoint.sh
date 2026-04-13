@@ -1,5 +1,5 @@
-#!/bin/sh
-# Docker entrypoint — fixes volume permissions then drops to openqa user via su-exec
+#!/bin/bash
+# Docker entrypoint — fixes volume permissions then drops to openqa user via gosu
 # Runs as root initially so it can chown the mounted data volume.
 #
 # DATA_PATH mirrors DB_PATH's parent directory (defaults to /data).
@@ -15,4 +15,4 @@ chown -R openqa:openqa "${DATA_PATH}" 2>/dev/null || true
 chmod 755 "${DATA_PATH}"
 
 # Hand off to the app as the unprivileged openqa user
-exec su-exec openqa "$@"
+exec gosu openqa "$@"

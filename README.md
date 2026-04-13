@@ -98,6 +98,8 @@ curl -fsSL https://openqa.orkajs.com/install-production.sh | bash
 - 🖥️ **VPS/Bare Metal** (Ubuntu/Debian with systemd)
 - ☁️ **Cloud Platforms** (Railway, Render, Fly.io)
 
+> 📖 **Configuration Guide**: See [CONFIGURATION.md](./CONFIGURATION.md) for detailed configuration options (environment variables vs web UI)
+
 📖 **[Full Deployment Guide](./DEPLOYMENT.md)** - Complete production setup instructions
 
 ### Configure Your SaaS (3 lines!)

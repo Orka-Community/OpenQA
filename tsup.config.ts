@@ -15,6 +15,7 @@ export default defineConfig([
       'cli/tests.html': 'cli/tests.html.ts',
       'cli/coverage.html': 'cli/coverage.html.ts',
       'cli/logs.html': 'cli/logs.html.ts',
+      'cli/session-detail.html': 'cli/session-detail.html.ts',
       'cli/env-routes': 'cli/env-routes.ts',
       'cli/env-config': 'cli/env-config.ts',
       'cli/components/sidebar': 'cli/components/sidebar.ts',

@@ -141,6 +141,14 @@ export class OpenQASQLiteDatabase {
       newAction.type, newAction.description,
       newAction.input ?? null, newAction.output ?? null, newAction.screenshot_path ?? null,
     );
+    
+    // Increment total_actions in the session for real-time metrics
+    this.db.prepare(`
+      UPDATE test_sessions 
+      SET total_actions = total_actions + 1 
+      WHERE id = ?
+    `).run(action.session_id);
+    
     return newAction;
   }
 
@@ -166,6 +174,14 @@ export class OpenQASQLiteDatabase {
       newBug.github_issue_url ?? null, newBug.screenshot_path ?? null,
       newBug.created_at, newBug.updated_at,
     );
+    
+    // Increment bugs_found in the session for real-time metrics
+    this.db.prepare(`
+      UPDATE test_sessions 
+      SET bugs_found = bugs_found + 1 
+      WHERE id = ?
+    `).run(bug.session_id);
+    
     return newBug;
   }
 

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { OpenQADatabase, Bug, KanbanTicket } from '../database/index.js';
 import { ConfigManager } from '../agent/config/index.js';
 import { ExportService, type ExportFormat } from '../agent/export/index.js';
+import { ReportGenerator } from '../agent/export/report-generator.js';
 import { getOpenAPISpec } from '../agent/openapi/spec.js';
 import { metrics } from '../agent/metrics.js';
 
@@ -79,6 +80,18 @@ export function createApiRouter(db: OpenQADatabase, config: ConfigManager): Rout
     const limit = parseInt(req.query.limit as string) || 10;
     const sessions = await db.getRecentSessions(limit);
     res.json(sessions);
+  });
+
+  router.get('/api/sessions/:id', async (req, res) => {
+    try {
+      const session = await db.getSession(req.params.id);
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      res.json(session);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   router.get('/api/sessions/:id/actions', async (req, res) => {
@@ -493,6 +506,38 @@ export function createApiRouter(db: OpenQADatabase, config: ConfigManager): Rout
     try {
       await db.clearCoverage();
       res.json({ success: true });
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // Reports
+  const reportGenerator = new ReportGenerator(db);
+
+  router.get('/api/reports/:sessionId', async (req, res) => {
+    try {
+      const report = await reportGenerator.generateReport(req.params.sessionId);
+      res.json(report);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.get('/api/reports/:sessionId/download/html', async (req, res) => {
+    try {
+      const report = await reportGenerator.generateReport(req.params.sessionId);
+      const filepath = await reportGenerator.exportHTML(report);
+      res.download(filepath, `openqa-report-${req.params.sessionId}.html`);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.get('/api/reports/:sessionId/download/json', async (req, res) => {
+    try {
+      const report = await reportGenerator.generateReport(req.params.sessionId);
+      const filepath = await reportGenerator.exportJSON(report);
+      res.download(filepath, `openqa-report-${req.params.sessionId}.json`);
     } catch (error: unknown) {
       res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }

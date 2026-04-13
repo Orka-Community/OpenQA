@@ -165,14 +165,24 @@ export class ResilientLLM extends EventEmitter {
       } catch (e) {
         lastError = e;
         if (attempt < this.maxRetries) {
-          const delayMs = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s
+          // Check if it's a rate limit error and extract wait time
+          let delayMs = Math.pow(2, attempt - 1) * 1000; // Default: 1s, 2s, 4s
+          const errorMsg = e instanceof Error ? e.message : String(e);
+          
+          // Parse OpenAI rate limit error: "Please try again in X.XXXs"
+          const rateLimitMatch = errorMsg.match(/try again in ([\d.]+)s/i);
+          if (rateLimitMatch) {
+            const waitSeconds = parseFloat(rateLimitMatch[1]);
+            delayMs = Math.ceil(waitSeconds * 1000) + 500; // Add 500ms buffer
+          }
+          
           metrics.inc('llm_retries');
           this.emit('llm-retry', {
             provider,
             attempt,
             maxRetries: this.maxRetries,
             delayMs,
-            error: e instanceof Error ? e.message : String(e),
+            error: errorMsg,
           });
           await new Promise((resolve) => setTimeout(resolve, delayMs));
         }

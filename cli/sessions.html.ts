@@ -314,8 +314,7 @@ export function getSessionsHTML(): string {
     }
 
     function viewSession(id) {
-      // For now, just go to dashboard - could expand to session detail view
-      window.location.href = '/?session=' + id;
+      window.location.href = '/sessions/' + id;
     }
 
     // ── WebSocket for realtime session updates ─────────────────────────────────

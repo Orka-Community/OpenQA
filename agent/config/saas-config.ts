@@ -11,20 +11,31 @@ export class SaaSConfigManager {
 
   constructor(db: OpenQADatabase) {
     this.db = db;
-    this.loadConfig();
+    // Load config asynchronously - will be available after first await
+    this.loadConfig().catch(() => {});
   }
 
-  private loadConfig() {
-    // For now, use environment variables only
-    // TODO: Implement async config loading when needed
+  private async loadConfig() {
+    try {
+      const configJson = await this.db.getConfig('saas.config');
+      if (configJson) {
+        this.config = JSON.parse(configJson);
+      }
+    } catch (e) {
+      // Config not found or invalid, will be set via configure()
+    }
   }
 
-  private saveConfig() {
-    // For now, use environment variables only
-    // TODO: Implement async config saving when needed
+  private async saveConfig() {
+    if (!this.config) return;
+    try {
+      await this.db.setConfig('saas.config', JSON.stringify(this.config));
+    } catch (e) {
+      console.error('Failed to save SaaS config:', e);
+    }
   }
 
-  configure(config: SaaSConfig): SaaSConfig {
+  async configure(config: SaaSConfig): Promise<SaaSConfig> {
     const result = validateSaaSAppConfigSafe(config);
     if (!result.success) {
       throw new ConfigError('Invalid SaaS configuration: ' + result.errors.join(', '));
@@ -35,7 +46,7 @@ export class SaaSConfigManager {
       techStack: config.techStack || this.detectTechStack(config.localPath),
       directives: config.directives || []
     };
-    this.saveConfig();
+    await this.saveConfig();
     return this.config;
   }
 
@@ -86,46 +97,42 @@ export class SaaSConfigManager {
     return stack;
   }
 
-  getConfig(): SaaSConfig | null {
-    return this.config;
-  }
-
-  addDirective(directive: string) {
+  async addDirective(directive: string) {
     if (!this.config) return;
     if (!this.config.directives) this.config.directives = [];
     this.config.directives.push(directive);
-    this.saveConfig();
+    await this.saveConfig();
   }
 
-  removeDirective(index: number) {
+  async removeDirective(index: number) {
     if (!this.config?.directives) return;
     this.config.directives.splice(index, 1);
-    this.saveConfig();
+    await this.saveConfig();
   }
 
-  updateDirectives(directives: string[]) {
+  async updateDirectives(directives: string[]) {
     if (!this.config) return;
     this.config.directives = directives;
-    this.saveConfig();
+    await this.saveConfig();
   }
 
-  setRepoUrl(url: string) {
+  async setRepoUrl(url: string) {
     if (!this.config) return;
     this.config.repoUrl = url;
-    this.saveConfig();
+    await this.saveConfig();
   }
 
-  setLocalPath(path: string) {
+  async setLocalPath(path: string) {
     if (!this.config) return;
     this.config.localPath = path;
     this.config.techStack = this.detectTechStack(path);
-    this.saveConfig();
+    await this.saveConfig();
   }
 
-  setAuthInfo(authInfo: SaaSConfig['authInfo']) {
+  async setAuthInfo(authInfo: SaaSConfig['authInfo']) {
     if (!this.config) return;
     this.config.authInfo = authInfo;
-    this.saveConfig();
+    await this.saveConfig();
   }
 
   isConfigured(): boolean {
@@ -136,9 +143,18 @@ export class SaaSConfigManager {
     return JSON.stringify(this.config, null, 2);
   }
 
-  importConfig(json: string): SaaSConfig {
+  async importConfig(json: string): Promise<SaaSConfig> {
     const config = JSON.parse(json) as SaaSConfig;
-    return this.configure(config);
+    return await this.configure(config);
+  }
+
+  async getConfig(): Promise<SaaSConfig | null> {
+    await this.loadConfig();
+    return this.config;
+  }
+
+  getConfigSync(): SaaSConfig | null {
+    return this.config;
   }
 }
 
