@@ -30,11 +30,29 @@ export class ConfigManager {
         username: process.env.SAAS_USERNAME,
         password: process.env.SAAS_PASSWORD
       },
-      github: process.env.GITHUB_TOKEN ? {
-        token: process.env.GITHUB_TOKEN,
-        owner: process.env.GITHUB_OWNER || '',
-        repo: process.env.GITHUB_REPO || ''
-      } : undefined,
+      github: (() => {
+        // Normalize GITHUB_REPO: accept full URL (https://github.com/owner/repo[.git])
+        // or short form (owner/repo) — extract just the repo name and owner if not set
+        let rawRepo = process.env.GITHUB_REPO || '';
+        let derivedOwner = process.env.GITHUB_OWNER || '';
+        if (rawRepo.includes('github.com/')) {
+          const match = rawRepo.match(/github\.com\/([^/]+)\/([^/.]+)/);
+          if (match) {
+            if (!derivedOwner) derivedOwner = match[1];
+            rawRepo = match[2];
+          }
+        } else if (!derivedOwner && rawRepo.includes('/')) {
+          // short form: owner/repo
+          const parts = rawRepo.split('/');
+          derivedOwner = parts[0];
+          rawRepo = parts[1];
+        }
+        return {
+          token: process.env.GITHUB_TOKEN || '',
+          owner: derivedOwner,
+          repo: rawRepo
+        };
+      })(),
       agent: {
         intervalMs: parseInt(process.env.AGENT_INTERVAL_MS || '3600000'),
         maxIterations: parseInt(process.env.AGENT_MAX_ITERATIONS || '20'),

@@ -156,12 +156,12 @@ export const ENV_VARIABLES: EnvVariable[] = [
     key: 'SAAS_URL',
     type: 'url',
     category: 'target',
-    required: true,
-    description: 'URL of the application to test',
+    required: false,
+    description: 'URL of the application to test (leave empty if using GITHUB_REPO instead)',
     placeholder: 'https://your-app.com',
     testable: true,
     validation: (value) => {
-      if (!value) return { valid: false, error: 'Target URL is required' };
+      if (!value) return { valid: true };
       try {
         const url = new URL(value);
         if (!['http:', 'https:'].includes(url.protocol)) {
@@ -233,8 +233,8 @@ export const ENV_VARIABLES: EnvVariable[] = [
     type: 'text',
     category: 'github',
     required: false,
-    description: 'GitHub repository name',
-    placeholder: 'your-repo',
+    description: 'GitHub repository — full URL (https://github.com/owner/repo) or short form (owner/repo)',
+    placeholder: 'https://github.com/your-org/your-repo',
   },
   {
     key: 'GITHUB_BRANCH',
