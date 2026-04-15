@@ -8,6 +8,8 @@ import { execSync } from 'child_process';
 import { ResilientLLM } from './llm-resilience.js';
 import { LLMCache } from './llm-cache.js';
 import { DiffAnalyzer } from './diff-analyzer.js';
+import { ProactiveKanbanManager } from './proactive-kanban.js';
+import { ProjectIntelligenceAnalyzer, type ProjectIntelligence } from '../intelligence/index.js';
 import { SpecialistAgentManager, type AgentType, type AgentStatus } from '../specialists/index.js';
 import { BrowserTools } from '../tools/browser.js';
 import { GitHubTools } from '../tools/github.js';
@@ -65,6 +67,9 @@ export class OpenQABrain extends EventEmitter {
   private browserTools: BrowserTools | null = null;
   private githubTools: GitHubTools | null = null;
   private kanbanTools: KanbanTools | null = null;
+  private intelligenceAnalyzer: ProjectIntelligenceAnalyzer;
+  private proactiveKanban: ProactiveKanbanManager;
+  private projectIntelligence: ProjectIntelligence | null = null;
   private sessionId: string = '';
   private workDir: string = './data/workspace';
   private testsDir: string = './data/generated-tests';
@@ -99,6 +104,9 @@ export class OpenQABrain extends EventEmitter {
     mkdirSync(this.testsDir, { recursive: true });
 
     // Initialize all tools
+    this.intelligenceAnalyzer = new ProjectIntelligenceAnalyzer();
+    this.proactiveKanban = new ProactiveKanbanManager(this.db);
+
     this.browserTools = new BrowserTools(this.db, this.sessionId);
     this.githubTools = new GitHubTools(this.db, this.sessionId, githubConfig || {});
     this.kanbanTools = new KanbanTools(this.db, this.sessionId);
@@ -567,6 +575,37 @@ Respond with JSON:
     const log = logger.child({ app: this.saasConfig.name });
     log.info('Brain starting autonomous mode', { maxIterations });
 
+    // ── Phase 0: Project Intelligence (runs BEFORE any testing) ─────────────
+    log.info('Running project intelligence analysis…');
+    try {
+      this.projectIntelligence = await this.intelligenceAnalyzer.analyze(
+        this.saasConfig.url,
+        {
+          repoUrl: this.saasConfig.repoUrl,
+          repoPath: this.saasConfig.localPath,
+          appName: this.saasConfig.name,
+          appDescription: this.saasConfig.description,
+        },
+      );
+      log.info('Intelligence analysis complete', {
+        domain: this.projectIntelligence.domain,
+        riskLevel: this.projectIntelligence.riskLevel,
+        regulations: this.projectIntelligence.regulatoryContext,
+        mandatoryChecks: this.projectIntelligence.mandatoryChecks.length,
+      });
+      this.emit('intelligence-complete', this.projectIntelligence);
+
+      // Seed Kanban with strategic tasks derived from the intelligence report
+      const seeded = await this.proactiveKanban.seedFromIntelligence(this.projectIntelligence);
+      log.info('Kanban seeded from intelligence', { ticketsCreated: seeded.length });
+      this.emit('kanban-seeded', { count: seeded.length, tickets: seeded });
+    } catch (err) {
+      log.warn('Intelligence analysis failed — continuing without it', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // ── Phase 1: LLM-powered analysis ────────────────────────────────────────
     const analysis = await this.analyze();
     log.info('Analysis complete', { suggestedTests: analysis.suggestedTests.length });
     this.emit('analysis-complete', analysis);
@@ -574,21 +613,34 @@ Respond with JSON:
     // Start specialist agents in parallel
     if (this.specialistManager) {
       log.info('Starting specialist agents');
-      const specialistTypes: AgentType[] = [
-        'form-tester',
-        'security-scanner',
-        'component-tester',
-        'api-tester',
-        'auth-tester',
-        'performance-tester'
-      ];
 
-      // Create all specialists
+      // Use intelligence to select the right specialists, or fall back to defaults
+      const specialistTypes: AgentType[] = this.projectIntelligence
+        ? (this.projectIntelligence.suggestedSpecialists as AgentType[])
+        : [
+          'form-tester',
+          'security-scanner',
+          'component-tester',
+          'api-tester',
+          'auth-tester',
+          'performance-tester'
+        ];
+
+      // Create all specialists (pre-coded + dynamic blueprints from intelligence)
       const agentIds = specialistTypes.map(type => {
         const id = this.specialistManager!.createSpecialist(type);
         log.info('Created specialist', { type, id });
         return { id, type };
       });
+
+      // Also spin up dynamic agents from intelligence blueprints
+      if (this.projectIntelligence?.dynamicAgentBlueprints.length) {
+        for (const blueprint of this.projectIntelligence.dynamicAgentBlueprints) {
+          const id = this.specialistManager!.createDynamicSpecialist(blueprint);
+          log.info('Created dynamic agent from blueprint', { name: blueprint.name, id });
+          agentIds.push({ id, type: `dynamic:${blueprint.name}` as AgentType });
+        }
+      }
 
       // Run them sequentially with delay to avoid rate limits
       (async () => {

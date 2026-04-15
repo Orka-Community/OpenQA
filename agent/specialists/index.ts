@@ -7,7 +7,7 @@ import { BrowserTools } from '../tools/browser.js';
 import { GitHubTools } from '../tools/github.js';
 import { KanbanTools } from '../tools/kanban.js';
 
-export type AgentType = 
+export type AgentType =
   | 'form-tester'
   | 'security-scanner'
   | 'sql-injection'
@@ -17,7 +17,9 @@ export type AgentType =
   | 'performance-tester'
   | 'api-tester'
   | 'auth-tester'
-  | 'navigation-tester';
+  | 'navigation-tester'
+  // Dynamic agents generated at runtime by ProjectIntelligenceAnalyzer
+  | `dynamic:${string}`;
 
 export interface AgentStatus {
   id: string;
@@ -381,7 +383,7 @@ export class SpecialistAgentManager extends EventEmitter {
   createSpecialist(type: AgentType, customPrompt?: string): string {
     const agentId = `${type}_${Date.now()}`;
     
-    const systemPrompt = customPrompt || SPECIALIST_PROMPTS[type];
+    const systemPrompt = customPrompt || SPECIALIST_PROMPTS[type as keyof typeof SPECIALIST_PROMPTS] || `You are a QA specialist agent named "${type}". Thoroughly test the target application and report any issues you find.`;
     
     const llm = this.createLLMAdapter();
     
@@ -431,6 +433,20 @@ export class SpecialistAgentManager extends EventEmitter {
     this.emit('agent-created', status);
     
     return agentId;
+  }
+
+  /**
+   * Create an agent from an AgentBlueprint produced by ProjectIntelligenceAnalyzer.
+   * The agent type is `dynamic:<name>` so it is distinguishable from pre-coded specialists.
+   */
+  createDynamicSpecialist(blueprint: {
+    name: string;
+    role: string;
+    goal: string;
+    systemPrompt: string;
+  }): string {
+    const type: AgentType = `dynamic:${blueprint.name}`;
+    return this.createSpecialist(type, blueprint.systemPrompt);
   }
 
   async runSpecialist(agentId: string, targetUrl: string): Promise<void> {
