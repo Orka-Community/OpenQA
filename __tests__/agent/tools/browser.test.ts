@@ -35,15 +35,18 @@ describe('BrowserTools', () => {
   let db: OpenQADatabase;
   let dbPath: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dbPath = join(tmpdir(), `openqa-browser-test-${Date.now()}.json`);
     db = new OpenQADatabase(dbPath);
+    // SQLite FK constraint: session must exist before actions are inserted
+    await db.createSession('test_session');
     vi.clearAllMocks();
   });
 
   afterEach(() => {
-    if (existsSync(dbPath)) {
-      try { unlinkSync(dbPath); } catch {}
+    for (const suffix of ['', '-wal', '-shm']) {
+      const f = dbPath + suffix;
+      if (existsSync(f)) try { unlinkSync(f); } catch {}
     }
   });
 

@@ -18,8 +18,10 @@ describe('OpenQADatabase', () => {
   });
 
   afterEach(() => {
-    if (existsSync(dbPath)) {
-      try { unlinkSync(dbPath); } catch {}
+    // Clean up SQLite file + WAL/SHM sidecars
+    for (const suffix of ['', '-wal', '-shm']) {
+      const f = dbPath + suffix;
+      if (existsSync(f)) try { unlinkSync(f); } catch {}
     }
   });
 
@@ -125,6 +127,12 @@ describe('OpenQADatabase', () => {
   // ─── Bugs ───
 
   describe('bugs', () => {
+    beforeEach(async () => {
+      // SQLite enforces FK constraints — sessions must exist before creating bugs
+      await db.createSession('bug_session');
+      await db.createSession('s1');
+    });
+
     it('should create a bug', async () => {
       const bug = await db.createBug({
         session_id: 'bug_session',

@@ -24,14 +24,17 @@ describe('GitHubTools', () => {
   let db: OpenQADatabase;
   let dbPath: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dbPath = join(tmpdir(), `openqa-github-test-${Date.now()}.json`);
     db = new OpenQADatabase(dbPath);
+    // SQLite FK constraint: session must exist before actions/bugs are inserted
+    await db.createSession('test_session');
   });
 
   afterEach(() => {
-    if (existsSync(dbPath)) {
-      try { unlinkSync(dbPath); } catch {}
+    for (const suffix of ['', '-wal', '-shm']) {
+      const f = dbPath + suffix;
+      if (existsSync(f)) try { unlinkSync(f); } catch {}
     }
   });
 
