@@ -2,7 +2,7 @@ import { OpenQAAgentV2 } from '../agent/index-v2.js';
 import { ConfigManager } from '../agent/config/index.js';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { WebSocketServer } from 'ws';
-import { OpenQADatabase } from '../database/index.js';
+import { OpenQASQLiteDatabase } from '../database/index.js';
 import { createApiRouter } from './routes.js';
 import { createAuthRouter } from './auth/router.js';
 import { createEnvRouter } from './env-routes.js';
@@ -89,13 +89,12 @@ const createAgentSchema = z.object({
 
 const config = new ConfigManager();
 const cfg = config.getConfigSync();
-// Always use the same JSON path as ConfigManager so config reads/writes are consistent
 const dbPath = (() => {
-  const raw = process.env.DB_PATH || cfg.database?.path || './data/openqa.json';
-  // ConfigManager uses LowDB (JSON) — normalize .db → .json to avoid path split
-  return raw.endsWith('.db') ? raw.replace(/\.db$/, '.json') : raw;
+  const raw = process.env.DB_PATH || cfg.database?.path || './data/openqa.db';
+  // Ensure SQLite extension — migrate any legacy .json path transparently
+  return raw.endsWith('.json') ? raw.replace(/\.json$/, '.db') : raw;
 })();
-const db = new OpenQADatabase(dbPath);
+const db = new OpenQASQLiteDatabase(dbPath);
 
 const app = express();
 

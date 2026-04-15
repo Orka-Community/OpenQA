@@ -288,6 +288,65 @@ export function createApiRouter(db: OpenQADatabase, config: ConfigManager): Rout
     }
   });
 
+  // Test GitHub connectivity — uses GitHub API with token if configured
+  router.post('/api/test-github', async (req, res) => {
+    try {
+      const cfg = await config.getAll();
+      const { owner, repo, token } = cfg.github ?? {};
+
+      if (!owner || !repo) {
+        return res.json({ success: false, message: 'GITHUB_OWNER and GITHUB_REPO must both be set' });
+      }
+
+      const apiUrl = `https://api.github.com/repos/${owner}/${repo}`;
+      const headers: Record<string, string> = {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'OpenQA/2.1',
+      };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const t0 = Date.now();
+      let ghRes: Awaited<ReturnType<typeof fetch>>;
+      try {
+        ghRes = await fetch(apiUrl, { headers, signal: AbortSignal.timeout(8000) });
+      } catch (_err: unknown) {
+        return res.json({ success: false, message: 'Network error — GitHub unreachable', latency: Date.now() - t0 });
+      }
+      const latency = Date.now() - t0;
+
+      if (ghRes.ok) {
+        const data = await ghRes.json().catch(() => ({}));
+        const visibility = (data as Record<string, unknown>).private ? 'private' : 'public';
+        return res.json({
+          success: true,
+          message: `${owner}/${repo} found (${visibility})`,
+          latency,
+          authenticated: !!token,
+        });
+      }
+
+      if (ghRes.status === 401) {
+        return res.json({ success: false, message: 'Invalid or expired GitHub token', latency });
+      }
+      if (ghRes.status === 403) {
+        return res.json({ success: false, message: 'Access forbidden — check token permissions', latency });
+      }
+      if (ghRes.status === 404) {
+        return res.json({
+          success: false,
+          message: token
+            ? `Repo ${owner}/${repo} not found or token has no access`
+            : `Repo ${owner}/${repo} not found (or private — add GITHUB_TOKEN)`,
+          latency,
+        });
+      }
+      return res.json({ success: false, message: `GitHub API returned ${ghRes.status}`, latency });
+
+    } catch (err: any) {
+      return res.json({ success: false, message: `Error: ${err.message}` });
+    }
+  });
+
   // Test LLM provider — verify the API key is valid with a minimal call
   router.post('/api/test-llm', async (req, res) => {
     const { provider, apiKey, baseUrl } =

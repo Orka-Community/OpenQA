@@ -277,23 +277,28 @@ export function getConfigHTML(cfg: any): string {
     const btn = document.getElementById('btn-test-conn');
     btn.textContent = 'Testing…';
     btn.disabled = true;
-    showMessage(isGithub ? \`Testing GitHub repo: \${url}…\` : 'Testing connection…', 'success');
+    showMessage(isGithub ? 'Testing GitHub repo…' : 'Testing connection…', 'success');
 
     try {
-      const response = await fetch('/api/test-connection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ url, authType: isGithub ? 'none' : authType, username, password })
-      });
-      const r = await response.json();
+      let r;
+      if (isGithub) {
+        const response = await fetch('/api/test-github', { method: 'POST', credentials: 'include' });
+        r = await response.json();
+      } else {
+        const response = await fetch('/api/test-connection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ url, authType, username, password })
+        });
+        r = await response.json();
+      }
 
       const latencyStr = r.latency != null ? \` · \${r.latency}ms\` : '';
-      const authStr = r.authenticated ? ' (with auth)' : '';
-      const prefix = isGithub ? 'GitHub' : 'Target';
+      const authStr = r.authenticated ? ' (authenticated)' : '';
 
       if (r.success) {
-        showMessage(\`✓ \${prefix} reachable\${authStr}\${latencyStr}\`, 'success');
+        showMessage(\`✓ \${r.message}\${authStr}\${latencyStr}\`, 'success');
       } else {
         const hints = {
           timeout:      'Check your network or firewall.',
@@ -303,7 +308,7 @@ export function getConfigHTML(cfg: any): string {
           not_found:    'URL path not found — check the base URL.',
           server_error: 'Server-side error — the app may be down.',
         };
-        const hint = hints[r.category] ? \` — \${hints[r.category]}\` : '';
+        const hint = !isGithub && hints[r.category] ? \` — \${hints[r.category]}\` : '';
         showMessage(\`✗ \${r.message}\${hint}\${latencyStr}\`, 'error');
       }
     } catch (error) {

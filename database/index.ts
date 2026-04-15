@@ -5,17 +5,9 @@ import { fileURLToPath } from 'url';
 import { mkdirSync, writeFileSync, readFileSync } from 'fs';
 
 export { OpenQASQLiteDatabase } from './sqlite.js';
-
-/**
- * Factory — chooses SQLite for .db paths, LowDB for .json paths.
- */
-export async function createDatabase(path: string): Promise<OpenQADatabase> {
-  if (path.endsWith('.db')) {
-    const { OpenQASQLiteDatabase } = await import('./sqlite.js');
-    return new OpenQASQLiteDatabase(path) as unknown as OpenQADatabase;
-  }
-  return new OpenQADatabase(path);
-}
+// OpenQADatabase is now an alias for the SQLite implementation.
+// LowDB (JSON) is kept below for reference only — it is no longer instantiated.
+export { OpenQASQLiteDatabase as OpenQADatabase } from './sqlite.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -101,7 +93,8 @@ interface DatabaseSchema {
   coverage: CoverageEntry[];
 }
 
-export class OpenQADatabase {
+/** @deprecated Use OpenQASQLiteDatabase instead */
+class OpenQALegacyDatabase {
   private db: Low<DatabaseSchema> | null = null;
 
   constructor(private dbPath: string = './data/openqa.json') {

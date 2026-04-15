@@ -25,7 +25,7 @@ services:
       - AGENT_AUTO_START=${AGENT_AUTO_START:-false}
       - WEB_PORT=4242
       - WEB_HOST=0.0.0.0
-      - DB_PATH=/data/openqa.json
+      - DB_PATH=/app/data/openqa.db
       - DATA_PATH=/data
     volumes:
       - openqa-data:/data

@@ -352,8 +352,8 @@ export const ENV_VARIABLES: EnvVariable[] = [
     type: 'text',
     category: 'database',
     required: false,
-    description: 'Path to SQLite database file',
-    placeholder: './data/openqa.db',
+    description: 'Path to the JSON database file (LowDB). All data is stored here — must be inside the Docker volume.',
+    placeholder: '/app/data/openqa.json',
     restartRequired: true,
   },
 
