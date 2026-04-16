@@ -230,9 +230,21 @@ app.post('/api/agent/start', async (_req, res) => {
 
   try {
     // Read saas config through ConfigManager so env vars + DB config are merged
-    const saasUrl = await config.get('saas.url');
+    let saasUrl = await config.get('saas.url');
+
+    // Allow GitHub-only mode: derive URL from configured repo when no saas.url is set
     if (!saasUrl) {
-      return res.status(400).json({ error: 'Target URL not configured. Go to /config to set the target application URL.' });
+      const githubOwner = await config.get('github.owner');
+      const githubRepo  = await config.get('github.repo');
+      if (githubOwner && githubRepo) {
+        saasUrl = `https://github.com/${githubOwner}/${githubRepo}`;
+      }
+    }
+
+    if (!saasUrl) {
+      return res.status(400).json({
+        error: 'No target configured. Set a SaaS URL in /config, or configure GITHUB_OWNER + GITHUB_REPO to test a repository.',
+      });
     }
 
     const saasConfig = {

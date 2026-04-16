@@ -94,13 +94,29 @@ export function getConfigHTML(cfg: any): string {
     </div>
 
     <div class="content">
-      <!-- SaaS Configuration -->
+      <!-- Target Configuration — URL or GitHub -->
       <div class="panel">
-        <div class="panel-head"><span class="panel-title">🌐 SaaS Target Configuration</span></div>
+        <div class="panel-head" style="flex-direction:column;align-items:flex-start;gap:12px;padding-bottom:0;border-bottom:none;">
+          <span class="panel-title">🎯 Target Configuration</span>
+
+          <!-- Mode toggle -->
+          <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;width:100%;margin-top:4px;">
+            <button id="tab-url" onclick="switchTargetMode('url')"
+              style="flex:1;padding:9px 0;font-size:12px;font-weight:700;border:none;cursor:pointer;transition:background 0.15s,color 0.15s;border-right:1px solid var(--border);background:var(--accent);color:#fff;">
+              🌐 Target URL
+            </button>
+            <button id="tab-github" onclick="switchTargetMode('github')"
+              style="flex:1;padding:9px 0;font-size:12px;font-weight:700;border:none;cursor:pointer;transition:background 0.15s,color 0.15s;background:transparent;color:var(--text-2);">
+              🐙 GitHub Repository
+            </button>
+          </div>
+        </div>
+
         <div class="panel-body">
-          <form class="form-grid" id="saas-form">
-            <div class="form-section">
-              <div class="form-section-title">Target Application</div>
+          <!-- ── URL mode ─────────────────────────────────────────────── -->
+          <form class="form-grid" id="saas-form" data-mode="url">
+            <div id="section-url">
+              <div class="form-section-title">SaaS Application</div>
               <div class="form-field full">
                 <label>Application URL</label>
                 <input type="url" id="saas_url" name="saas.url" value="${cfg.saas?.url || ''}" placeholder="https://your-app.com">
@@ -131,41 +147,50 @@ export function getConfigHTML(cfg: any): string {
                 </div>
               </div>
             </div>
+
+            <!-- ── GitHub mode ────────────────────────────────────────── -->
+            <div id="section-github" style="display:none;">
+              <div class="form-section-title">GitHub Repository</div>
+              <div class="form-row">
+                <div class="form-field">
+                  <label>Owner / Organisation</label>
+                  <input type="text" id="github_owner" name="github.owner" value="${cfg.github?.owner || ''}" placeholder="Orka-Community">
+                </div>
+                <div class="form-field">
+                  <label>Repository</label>
+                  <input type="text" id="github_repo" name="github.repo" value="${cfg.github?.repo || ''}" placeholder="paper2any">
+                </div>
+              </div>
+              <div class="form-field full">
+                <label>Personal Access Token</label>
+                <input type="password" id="github_token" name="github.token" value="${cfg.github?.token || ''}" placeholder="ghp_xxxxxxxxxxxx">
+              </div>
+              <p style="font-size:12px;color:var(--text-2);margin-top:8px;">
+                OpenQA will test the repository at
+                <code style="color:var(--accent)" id="github-url-preview">https://github.com/…</code>.
+                A token is required to create issues and access private repos.
+              </p>
+            </div>
           </form>
         </div>
       </div>
 
-      <!-- LLM Configuration -->
+      <!-- LLM — redirect to env page -->
       <div class="panel">
-        <div class="panel-head"><span class="panel-title">🤖 LLM Configuration</span></div>
+        <div class="panel-head">
+          <span class="panel-title">🤖 LLM Configuration</span>
+          <a href="/config/env" style="font-size:12px;color:var(--accent);text-decoration:none;">Open in Environment Manager →</a>
+        </div>
         <div class="panel-body">
-          <form class="form-grid" id="llm-form">
-            <div class="form-section">
-              <div class="form-section-title">Language Model Provider</div>
-              <div class="form-row">
-                <div class="form-field">
-                  <label>Provider</label>
-                  <select id="llm_provider" name="llm.provider">
-                    <option value="openai" ${cfg.llm?.provider === 'openai' ? 'selected' : ''}>OpenAI</option>
-                    <option value="anthropic" ${cfg.llm?.provider === 'anthropic' ? 'selected' : ''}>Anthropic</option>
-                    <option value="ollama" ${cfg.llm?.provider === 'ollama' ? 'selected' : ''}>Ollama</option>
-                  </select>
-                </div>
-                <div class="form-field">
-                  <label>Model</label>
-                  <input type="text" id="llm_model" name="llm.model" value="${cfg.llm?.model || ''}" placeholder="gpt-4, claude-3-sonnet, etc.">
-                </div>
-              </div>
-              <div class="form-field full">
-                <label>API Key</label>
-                <input type="password" id="llm_apiKey" name="llm.apiKey" value="${cfg.llm?.apiKey || ''}" placeholder="Your API key">
-              </div>
-              <div class="form-field full">
-                <label>Base URL (for Ollama)</label>
-                <input type="url" id="llm_baseUrl" name="llm.baseUrl" value="${cfg.llm?.baseUrl || ''}" placeholder="http://localhost:11434">
-              </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 0;color:var(--text-2);font-size:13px;">
+            <span style="font-size:22px;">⚙️</span>
+            <div>
+              LLM provider, API key, and model are managed in the <strong style="color:var(--text-1)">Environment Manager</strong>
+              (<code style="color:var(--accent)">/config/env</code>) to keep secrets in one place.
+              <br>Current provider: <strong style="color:var(--text-1)">${cfg.llm?.provider || 'openai'}</strong>
+              · Model: <strong style="color:var(--text-1)">${cfg.llm?.model || 'default'}</strong>
             </div>
-          </form>
+          </div>
         </div>
       </div>
 
@@ -199,7 +224,6 @@ export function getConfigHTML(cfg: any): string {
 
       <div class="actions">
         <button class="btn-sm btn-ghost" id="btn-test-conn" onclick="testConnection()">Test Connection</button>
-        <button class="btn-sm btn-ghost" id="btn-test-llm" onclick="testLLM()">Test LLM Key</button>
         <button class="btn-sm btn-ghost" onclick="resetConfig()">Reset to Defaults</button>
         <div id="message"></div>
       </div>
@@ -208,14 +232,62 @@ export function getConfigHTML(cfg: any): string {
 </div>
 
 <script>
+  // ── Target mode (url | github) ────────────────────────────────────────────────
+  let _targetMode = localStorage.getItem('openqa_target_mode') || 'url';
+
+  function switchTargetMode(mode) {
+    _targetMode = mode;
+    localStorage.setItem('openqa_target_mode', mode);
+
+    const sectionUrl    = document.getElementById('section-url');
+    const sectionGithub = document.getElementById('section-github');
+    const tabUrl        = document.getElementById('tab-url');
+    const tabGithub     = document.getElementById('tab-github');
+
+    if (mode === 'url') {
+      sectionUrl.style.display    = '';
+      sectionGithub.style.display = 'none';
+      tabUrl.style.background    = 'var(--accent)';
+      tabUrl.style.color         = '#fff';
+      tabGithub.style.background = 'transparent';
+      tabGithub.style.color      = 'var(--text-2)';
+    } else {
+      sectionUrl.style.display    = 'none';
+      sectionGithub.style.display = '';
+      tabUrl.style.background    = 'transparent';
+      tabUrl.style.color         = 'var(--text-2)';
+      tabGithub.style.background = 'var(--accent)';
+      tabGithub.style.color      = '#fff';
+    }
+    updateGithubPreview();
+  }
+
+  function updateGithubPreview() {
+    const owner   = (document.getElementById('github_owner')?.value || '').trim();
+    const repo    = (document.getElementById('github_repo')?.value  || '').trim();
+    const preview = document.getElementById('github-url-preview');
+    if (preview) {
+      preview.textContent = (owner && repo)
+        ? 'https://github.com/' + owner + '/' + repo
+        : 'https://github.com/…';
+    }
+  }
+
+  // Wire live preview to owner/repo inputs after DOM is ready
+  window.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('github_owner')?.addEventListener('input', updateGithubPreview);
+    document.getElementById('github_repo')?.addEventListener('input',  updateGithubPreview);
+  });
+
+  // ── Save ──────────────────────────────────────────────────────────────────────
   async function saveAllConfig() {
-    const forms = ['saas-form', 'llm-form', 'agent-form'];
+    const forms = ['saas-form', 'agent-form'];
     const config = {};
-    
+
     for (const formId of forms) {
       const form = document.getElementById(formId);
       const formData = new FormData(form);
-      
+
       for (let [key, value] of formData.entries()) {
         if (value === '') continue;
         const keys = key.split('.');
@@ -233,7 +305,19 @@ export function getConfigHTML(cfg: any): string {
         }
       }
     }
-    
+
+    // When in GitHub mode, explicitly clear saas.url so the daemon uses GitHub
+    if (_targetMode === 'github') {
+      if (!config.saas) config.saas = {};
+      config.saas.url = '';
+    }
+    // When in URL mode, clear github fields so the daemon doesn't fall back to GitHub
+    if (_targetMode === 'url') {
+      if (!config.github) config.github = {};
+      config.github.owner = '';
+      config.github.repo  = '';
+    }
+
     try {
       const response = await fetch('/api/config', {
         method: 'POST',
@@ -247,114 +331,59 @@ export function getConfigHTML(cfg: any): string {
     }
   }
 
+  // ── Test connection ───────────────────────────────────────────────────────────
   async function testConnection() {
-    let url = document.getElementById('saas_url').value.trim();
-    let isGithub = false;
-
-    // If no URL configured, fall back to GITHUB_REPO from env config
-    if (!url) {
-      try {
-        const cfg = await fetch('/api/config', { credentials: 'include' }).then(r => r.json());
-        const repo = cfg?.github?.repo || '';
-        if (repo) {
-          // Normalise to an https URL without .git suffix
-          url = repo.replace(/\\.git$/, '');
-          if (!url.startsWith('http')) url = 'https://github.com/' + url;
-          isGithub = true;
-        }
-      } catch (_) {}
-    }
-
-    if (!url) {
-      showMessage('No target configured — enter an Application URL or set GITHUB_REPO in Environment', 'error');
-      return;
-    }
-
-    const authType = document.getElementById('saas_authType').value;
-    const username = document.getElementById('saas_username').value.trim();
-    const password = document.getElementById('saas_password').value;
-
     const btn = document.getElementById('btn-test-conn');
     btn.textContent = 'Testing…';
     btn.disabled = true;
-    showMessage(isGithub ? 'Testing GitHub repo…' : 'Testing connection…', 'success');
 
     try {
       let r;
-      if (isGithub) {
-        const response = await fetch('/api/test-github', { method: 'POST', credentials: 'include' });
-        r = await response.json();
+      if (_targetMode === 'github') {
+        showMessage('Testing GitHub repo…', 'success');
+        const res = await fetch('/api/test-github', { method: 'POST', credentials: 'include' });
+        r = await res.json();
       } else {
-        const response = await fetch('/api/test-connection', {
+        const url      = document.getElementById('saas_url').value.trim();
+        const authType = document.getElementById('saas_authType').value;
+        const username = document.getElementById('saas_username').value.trim();
+        const password = document.getElementById('saas_password').value;
+
+        if (!url) {
+          showMessage('Enter an Application URL first', 'error');
+          return;
+        }
+        showMessage('Testing connection…', 'success');
+        const res = await fetch('/api/test-connection', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({ url, authType, username, password })
         });
-        r = await response.json();
+        r = await res.json();
       }
 
       const latencyStr = r.latency != null ? \` · \${r.latency}ms\` : '';
-      const authStr = r.authenticated ? ' (authenticated)' : '';
+      const authStr    = r.authenticated ? ' (authenticated)' : '';
 
       if (r.success) {
         showMessage(\`✓ \${r.message}\${authStr}\${latencyStr}\`, 'success');
       } else {
         const hints = {
-          timeout:      'Check your network or firewall.',
-          network_error:'URL is unreachable — check spelling or DNS.',
-          auth_failed:  'Credentials are wrong or auth is required.',
-          forbidden:    'Server is reachable — check IP restrictions.',
-          not_found:    'URL path not found — check the base URL.',
-          server_error: 'Server-side error — the app may be down.',
+          timeout:       'Check your network or firewall.',
+          network_error: 'URL is unreachable — check spelling or DNS.',
+          auth_failed:   'Credentials are wrong or auth is required.',
+          forbidden:     'Server is reachable — check IP restrictions.',
+          not_found:     'URL path not found — check the base URL.',
+          server_error:  'Server-side error — the app may be down.',
         };
-        const hint = !isGithub && hints[r.category] ? \` — \${hints[r.category]}\` : '';
+        const hint = (_targetMode === 'url' && hints[r.category]) ? \` — \${hints[r.category]}\` : '';
         showMessage(\`✗ \${r.message}\${hint}\${latencyStr}\`, 'error');
       }
     } catch (error) {
       showMessage('Request failed: ' + error.message, 'error');
     } finally {
       btn.textContent = 'Test Connection';
-      btn.disabled = false;
-    }
-  }
-
-  async function testLLM() {
-    const provider = document.getElementById('llm_provider').value;
-    const apiKey = document.getElementById('llm_apiKey').value.trim();
-    const baseUrl = document.getElementById('llm_baseUrl').value.trim();
-
-    if (!provider) {
-      showMessage('Select a provider first', 'error');
-      return;
-    }
-    if (provider !== 'ollama' && !apiKey) {
-      showMessage('Enter an API key first', 'error');
-      return;
-    }
-
-    const btn = document.getElementById('btn-test-llm');
-    btn.textContent = 'Testing…';
-    btn.disabled = true;
-    showMessage(\`Testing \${provider} key…\`, 'success');
-
-    try {
-      const response = await fetch('/api/test-llm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ provider, apiKey, baseUrl })
-      });
-      const r = await response.json();
-      const latencyStr = r.latency != null ? \` · \${r.latency}ms\` : '';
-      showMessage(
-        (r.success ? '✓ ' : '✗ ') + r.message + latencyStr,
-        r.success ? 'success' : 'error'
-      );
-    } catch (error) {
-      showMessage('Request failed: ' + error.message, 'error');
-    } finally {
-      btn.textContent = 'Test LLM Key';
       btn.disabled = false;
     }
   }
@@ -432,24 +461,22 @@ export function getConfigHTML(cfg: any): string {
       setVal('saas_username', cfg.saas?.username);
       if (cfg.saas?.password) setVal('saas_password', cfg.saas.password);
 
-      // LLM
-      setVal('llm_provider', cfg.llm?.provider);
-      // Validate model: must not look like an email or API key
-      const model = cfg.llm?.model;
-      if (model && !model.includes('@') && model.length < 100) {
-        setVal('llm_model', model);
-      } else if (model) {
-        // Wrong data in DB — clear the field and warn
-        document.getElementById('llm_model').value = '';
-        console.warn('llm.model in DB contains invalid data, cleared:', model);
-      }
-      if (cfg.llm?.apiKey) setVal('llm_apiKey', cfg.llm.apiKey);
-      setVal('llm_baseUrl', cfg.llm?.baseUrl);
+      // GitHub
+      setVal('github_owner', cfg.github?.owner);
+      setVal('github_repo',  cfg.github?.repo);
+      if (cfg.github?.token) setVal('github_token', cfg.github.token);
 
       // Agent
       setVal('agent_autoStart', cfg.agent?.autoStart);
-      if (cfg.agent?.intervalMs) setVal('agent_intervalMs', cfg.agent.intervalMs);
+      if (cfg.agent?.intervalMs)    setVal('agent_intervalMs', cfg.agent.intervalMs);
       if (cfg.agent?.maxIterations) setVal('agent_maxIterations', cfg.agent.maxIterations);
+
+      // Detect mode: activate GitHub tab if owner is set and no saas.url
+      const hasGithub = !!(cfg.github?.owner || cfg.github?.repo);
+      const hasUrl    = !!(cfg.saas?.url);
+      const savedMode = localStorage.getItem('openqa_target_mode');
+      const mode = savedMode || (hasGithub && !hasUrl ? 'github' : 'url');
+      switchTargetMode(mode);
     } catch (e) {
       console.error('Failed to reload config from API:', e);
     }

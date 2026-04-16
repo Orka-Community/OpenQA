@@ -135,9 +135,104 @@ export function getDashboardHTML(): string {
     }
 
     .sidebar-footer {
-      padding: 16px 24px;
+      padding: 12px 16px;
       border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
+
+    .user-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+    }
+    .user-avatar {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: var(--accent-md);
+      color: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+    }
+    .user-info { flex: 1; min-width: 0; }
+    .user-name { font-size: 12px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-role { font-size: 10px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px; }
+    .btn-logout {
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-2);
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color 0.15s, background 0.15s;
+    }
+    .btn-logout:hover { background: var(--red-lo); color: var(--red); border-color: var(--red); }
+
+    .btn-user-mgmt {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-2);
+      font-size: 11px;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      transition: color 0.15s, background 0.15s;
+    }
+    .btn-user-mgmt:hover { background: var(--panel); color: var(--text-1); }
+
+    /* User management modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 1000;
+      align-items: center; justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border-hi);
+      border-radius: var(--radius-lg);
+      width: 480px; max-width: 95vw;
+      padding: 28px;
+    }
+    .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 20px; }
+    .modal-field { margin-bottom: 14px; }
+    .modal-field label { display: block; font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .modal-field input, .modal-field select {
+      width: 100%; padding: 8px 12px;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text-1); font-size: 13px;
+    }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+    .modal-row { display: flex; gap: 10px; }
+    .modal-row .modal-field { flex: 1; }
+
+    .user-list { margin-top: 16px; }
+    .user-list-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 0; border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .user-list-item:last-child { border-bottom: none; }
+    .role-badge {
+      padding: 2px 7px; border-radius: 4px;
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .role-badge.admin { background: var(--accent-md); color: var(--accent); }
+    .role-badge.viewer { background: rgba(56,189,248,0.12); color: var(--blue); }
+    .btn-del { margin-left: auto; padding: 3px 8px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--text-2); font-size: 11px; cursor: pointer; }
+    .btn-del:hover { background: var(--red-lo); color: var(--red); }
 
     .status-pill {
       display: flex;
@@ -783,12 +878,58 @@ export function getDashboardHTML(): string {
     </div>
 
     <div class="sidebar-footer">
+      <!-- Connection status -->
       <div class="status-pill">
         <div class="dot" id="connection-dot"></div>
         <span id="connection-text">Connected</span>
       </div>
+      <!-- Current user -->
+      <div class="user-pill">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <div class="user-info">
+          <div class="user-name" id="user-name">Loading…</div>
+          <div class="user-role" id="user-role">—</div>
+        </div>
+        <button class="btn-logout" onclick="logout()" title="Sign out">⎋ Out</button>
+      </div>
+      <!-- User management (admin only) -->
+      <button class="btn-user-mgmt" id="btn-user-mgmt" style="display:none" onclick="openUserModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+        Manage Users
+      </button>
     </div>
   </aside>
+
+  <!-- User Management Modal -->
+  <div class="modal-backdrop" id="user-modal" onclick="if(event.target===this)closeUserModal()">
+    <div class="modal">
+      <h3>👥 User Management</h3>
+
+      <!-- Existing users list -->
+      <div id="user-list" class="user-list"></div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:20px 0">
+
+      <!-- Create new user -->
+      <div style="font-size:12px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px;margin-bottom:14px">Add User</div>
+      <div class="modal-row">
+        <div class="modal-field"><label>Username</label><input type="text" id="new-username" placeholder="username"></div>
+        <div class="modal-field"><label>Role</label>
+          <select id="new-role">
+            <option value="viewer">Viewer</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-field"><label>Password</label><input type="password" id="new-password" placeholder="min 8 characters"></div>
+
+      <div class="modal-actions">
+        <button class="btn-sm btn-ghost" onclick="closeUserModal()">Cancel</button>
+        <button class="btn-sm btn-primary" onclick="createUser()">Create User</button>
+      </div>
+      <div id="user-modal-msg" style="margin-top:10px;font-size:12px;color:var(--accent)"></div>
+    </div>
+  </div>
 
   <!-- Main -->
   <main>
@@ -1823,11 +1964,114 @@ export function getDashboardHTML(): string {
     }
   }
 
+  // ── Auth: current user + logout ─────────────────────────────────────────
+  async function loadCurrentUser() {
+    try {
+      const res = await fetch('/api/auth/me', { credentials: 'include' });
+      if (!res.ok) return;
+      const me = await res.json();
+      const initials = (me.username || '?').slice(0, 2).toUpperCase();
+      document.getElementById('user-avatar').textContent = initials;
+      document.getElementById('user-name').textContent = me.username || 'Unknown';
+      document.getElementById('user-role').textContent = me.role || 'viewer';
+      if (me.role === 'admin') {
+        document.getElementById('btn-user-mgmt').style.display = 'flex';
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  async function logout() {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    window.location.href = '/login';
+  }
+
+  // ── User management modal ────────────────────────────────────────────────
+  async function openUserModal() {
+    document.getElementById('user-modal').classList.add('open');
+    await loadUserList();
+  }
+
+  function closeUserModal() {
+    document.getElementById('user-modal').classList.remove('open');
+    document.getElementById('user-modal-msg').textContent = '';
+  }
+
+  async function loadUserList() {
+    try {
+      const res = await fetch('/api/accounts', { credentials: 'include' });
+      if (!res.ok) return;
+      const users = await res.json();
+      const list = document.getElementById('user-list');
+      list.innerHTML = users.map(u => \`
+        <div class="user-list-item">
+          <div class="user-avatar" style="width:28px;height:28px;font-size:10px">\${u.username.slice(0,2).toUpperCase()}</div>
+          <span style="flex:1">\${u.username}</span>
+          <span class="role-badge \${u.role}">\${u.role}</span>
+          <button class="btn-del" onclick="deleteUser('\${u.id}', '\${u.username}')" title="Delete user">✕</button>
+        </div>
+      \`).join('');
+    } catch (e) { /* ignore */ }
+  }
+
+  async function createUser() {
+    const username = document.getElementById('new-username').value.trim();
+    const password = document.getElementById('new-password').value;
+    const role     = document.getElementById('new-role').value;
+    const msg      = document.getElementById('user-modal-msg');
+
+    if (!username || !password) { msg.textContent = 'Username and password are required.'; return; }
+    if (password.length < 8)    { msg.textContent = 'Password must be at least 8 characters.'; return; }
+
+    try {
+      const res = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ username, password, role }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        msg.style.color = 'var(--green)';
+        msg.textContent = \`User "\${username}" created.\`;
+        document.getElementById('new-username').value = '';
+        document.getElementById('new-password').value = '';
+        await loadUserList();
+      } else {
+        msg.style.color = 'var(--red)';
+        msg.textContent = data.error || 'Failed to create user.';
+      }
+    } catch (e) {
+      msg.style.color = 'var(--red)';
+      msg.textContent = 'Network error.';
+    }
+  }
+
+  async function deleteUser(id, username) {
+    if (!confirm(\`Delete user "\${username}"?\`)) return;
+    const msg = document.getElementById('user-modal-msg');
+    try {
+      const res = await fetch(\`/api/accounts/\${id}\`, { method: 'DELETE', credentials: 'include' });
+      const data = await res.json();
+      if (res.ok) {
+        msg.style.color = 'var(--green)';
+        msg.textContent = \`User "\${username}" deleted.\`;
+        await loadUserList();
+      } else {
+        msg.style.color = 'var(--red)';
+        msg.textContent = data.error || 'Cannot delete user.';
+      }
+    } catch (e) {
+      msg.style.color = 'var(--red)';
+      msg.textContent = 'Network error.';
+    }
+  }
+
   // Initialize
   window.addEventListener('load', () => {
     initCharts();
     connectWebSocket();
     loadInitialData();
+    loadCurrentUser();
   });
 </script>
 
