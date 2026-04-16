@@ -610,52 +610,112 @@ Respond with JSON:
     log.info('Analysis complete', { suggestedTests: analysis.suggestedTests.length });
     this.emit('analysis-complete', analysis);
 
-    // Start specialist agents in parallel
+    // ── Phase 2: Specialist agents ───────────────────────────────────────────────
     if (this.specialistManager) {
       log.info('Starting specialist agents');
 
-      // Use intelligence to select the right specialists, or fall back to defaults
-      const specialistTypes: AgentType[] = this.projectIntelligence
-        ? (this.projectIntelligence.suggestedSpecialists as AgentType[])
-        : [
-          'form-tester',
-          'security-scanner',
-          'component-tester',
-          'api-tester',
-          'auth-tester',
-          'performance-tester'
-        ];
+      // Detect mode: GitHub repo vs SaaS web-app
+      const isGithubMode = this.saasConfig.url.startsWith('https://github.com/') ||
+                           this.saasConfig.url.startsWith('http://github.com/');
 
-      // Create all specialists (pre-coded + dynamic blueprints from intelligence)
+      // Choose specialist types based on mode
+      let specialistTypes: AgentType[];
+      if (isGithubMode) {
+        // GitHub-only specialists — no browser tools needed
+        specialistTypes = ['github-code-reviewer', 'github-security-auditor', 'github-issue-analyzer'];
+        log.info('GitHub mode detected — using GitHub specialists', { url: this.saasConfig.url });
+      } else if (this.projectIntelligence) {
+        // Intelligence-guided SaaS specialists (max 4 to keep TPM in budget)
+        specialistTypes = (this.projectIntelligence.suggestedSpecialists as AgentType[]).slice(0, 4);
+      } else {
+        // Default SaaS specialists
+        specialistTypes = ['form-tester', 'security-scanner', 'component-tester', 'performance-tester'];
+      }
+
+      // Create specialist agents
       const agentIds = specialistTypes.map(type => {
         const id = this.specialistManager!.createSpecialist(type);
         log.info('Created specialist', { type, id });
         return { id, type };
       });
 
-      // Also spin up dynamic agents from intelligence blueprints
-      if (this.projectIntelligence?.dynamicAgentBlueprints.length) {
-        for (const blueprint of this.projectIntelligence.dynamicAgentBlueprints) {
+      // Add dynamic agents from intelligence blueprints (max 2 extra, only in SaaS mode)
+      if (!isGithubMode && this.projectIntelligence?.dynamicAgentBlueprints.length) {
+        for (const blueprint of this.projectIntelligence.dynamicAgentBlueprints.slice(0, 2)) {
           const id = this.specialistManager!.createDynamicSpecialist(blueprint);
           log.info('Created dynamic agent from blueprint', { name: blueprint.name, id });
           agentIds.push({ id, type: `dynamic:${blueprint.name}` as AgentType });
         }
       }
 
-      // Run them sequentially with delay to avoid rate limits
+      // Move Kanban tickets to "in-progress" when a specialist starts,
+      // and to "done" / "to-do" when it completes / fails.
+      this.specialistManager!.on('agent-started', async (status: AgentStatus) => {
+        try {
+          await this.proactiveKanban.syncWithSpecialistResults([
+            { type: status.type, status: 'running' }
+          ]);
+          // Find tickets matching this specialist and move to in-progress
+          const tickets = await this.db.getKanbanTickets();
+          // (syncWithSpecialistResults skips 'running' status intentionally — handle in-progress here)
+          const tagMap: Record<string, string[]> = {
+            'security-scanner': ['security'], 'github-security-auditor': ['security'],
+            'accessibility-tester': ['accessibility', 'wcag'],
+            'performance-tester': ['performance'],
+            'form-tester': ['forms'], 'component-tester': ['ui', 'improvement'],
+            'api-tester': ['api'], 'github-code-reviewer': ['tech-debt', 'improvement'],
+            'github-issue-analyzer': ['strategy'],
+          };
+          const relevantTags = tagMap[status.type] || [];
+          for (const ticket of tickets) {
+            if (ticket.column !== 'to-do' && ticket.column !== 'backlog') continue;
+            const ticketTags = (ticket.tags || '').split(',').map((t: string) => t.trim().toLowerCase());
+            if (relevantTags.some(tag => ticketTags.includes(tag))) {
+              await this.db.updateKanbanTicket(ticket.id, { column: 'in-progress' });
+            }
+          }
+        } catch { /* non-critical */ }
+      });
+
+      this.specialistManager!.on('agent-completed', async (data: AgentStatus) => {
+        try {
+          await this.proactiveKanban.syncWithSpecialistResults([
+            { type: data.type, status: 'completed' }
+          ]);
+        } catch { /* non-critical */ }
+      });
+
+      this.specialistManager!.on('agent-failed', async (data: AgentStatus) => {
+        try {
+          await this.proactiveKanban.syncWithSpecialistResults([
+            { type: data.type, status: 'failed' }
+          ]);
+        } catch { /* non-critical */ }
+      });
+
+      // Run sequentially with smart rate-limit handling between specialists
       (async () => {
         for (const { id, type } of agentIds) {
           try {
             await this.specialistManager!.runSpecialist(id, this.saasConfig.url);
-            // Wait 2 seconds between specialists to avoid rate limits
-            await new Promise(resolve => setTimeout(resolve, 2000));
           } catch (err) {
-            log.error('Specialist failed', { type, error: err instanceof Error ? err.message : String(err) });
+            const errMsg = err instanceof Error ? err.message : String(err);
+            log.error('Specialist failed', { type, error: errMsg });
+
+            // If rate-limited, pause longer before the next specialist
+            if (errMsg.includes('rate_limit_exceeded') || errMsg.includes('429')) {
+              log.warn('Rate limit hit — pausing 60s before next specialist');
+              await new Promise(resolve => setTimeout(resolve, 60_000));
+              continue;
+            }
           }
+          // Wait between specialists to stay within TPM limits.
+          // gpt-4 free tier = 10k TPM → ~30s cooldown keeps us under budget.
+          await new Promise(resolve => setTimeout(resolve, 30_000));
         }
       })().catch(err => log.error('Specialist suite failed', { error: err instanceof Error ? err.message : String(err) }));
 
-      log.info('Specialist agents started', { count: agentIds.length });
+      log.info('Specialist agents queued', { count: agentIds.length, mode: isGithubMode ? 'github' : 'saas' });
     }
 
     for (let i = 0; i < maxIterations; i++) {

@@ -1194,6 +1194,10 @@ export function getDashboardHTML(): string {
       case 'dynamic-agents':
         // No UI update needed here — DB agents handle the hierarchy/panel
         break;
+      // Real-time specialist statuses pushed every 3s by the daemon
+      case 'specialists':
+        updateSpecialists(data.data);
+        break;
     }
   }
 
@@ -1263,34 +1267,43 @@ export function getDashboardHTML(): string {
     }
   }
 
+  // Track last session ID so we only add a new chart point when data changes
+  let _lastChartSessionId = null;
+  let _lastChartActions = -1;
+
   function updateMetrics(session, isRunning = false) {
     document.getElementById('active-agents').textContent = session.active_agents || 0;
     document.getElementById('total-actions').textContent = session.total_actions || 0;
     document.getElementById('bugs-found').textContent = session.bugs_found || 0;
-    
+
     const rate = session.success_rate;
     document.getElementById('success-rate').textContent = rate > 0 ? rate + '%' : '—';
-    
-    // Only update chart data if session is actively running
-    // This prevents the chart from auto-updating when no session is active
-    if (!isRunning) {
-      return;
-    }
-    
-    // Update chart data for running sessions
+
+    // Update the live chart:
+    // • If running → add a new point every tick (capped at 20 points)
+    // • If just completed (isRunning=false but actions changed) → add final point once
+    const actions = session.total_actions || 0;
+    const sessionChanged = session.id && session.id !== _lastChartSessionId;
+    const actionsChanged = actions !== _lastChartActions;
+
+    if (!isRunning && !sessionChanged && !actionsChanged) return;
+
+    _lastChartActions = actions;
+    if (session.id) _lastChartSessionId = session.id;
+
     const now = new Date();
     const timeLabel = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-    
-    if (chartData.labels.length > 7) {
+
+    if (chartData.labels.length >= 20) {
       chartData.labels.shift();
       chartData.actions.shift();
       chartData.successRates.shift();
     }
-    
+
     chartData.labels.push(timeLabel);
-    chartData.actions.push(session.total_actions || 0);
+    chartData.actions.push(actions);
     chartData.successRates.push(rate || 0);
-    
+
     if (performanceChart) {
       performanceChart.data.labels = chartData.labels;
       performanceChart.data.datasets[0].data = chartData.actions;
@@ -1504,6 +1517,52 @@ export function getDashboardHTML(): string {
     document.getElementById('chart-errors').style.display = tab === 'errors' ? 'block' : 'none';
   }
 
+  // Cache of last received specialist statuses (updated every 3s via WS)
+  let _cachedSpecialists = [];
+
+  function updateSpecialists(statuses) {
+    if (!statuses) return;
+    _cachedSpecialists = statuses;
+    // Only render if the specialists tab is currently visible
+    if (activeAgentTab === 'specialists') {
+      renderSpecialistsTable(statuses);
+    }
+  }
+
+  function renderSpecialistsTable(statuses) {
+    const container = document.getElementById('agents-list');
+    if (!statuses || statuses.length === 0) {
+      container.innerHTML = '<div class="empty-state">No specialists running — start a session to activate them</div>';
+      return;
+    }
+
+    // Pretty-print the specialist type (strip dynamic: prefix, convert hyphens)
+    function formatType(type) {
+      return type
+        .replace(/^dynamic:/, '')
+        .replace(/-/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    // Performance = findings / max(actions,1) * 100, capped at 100
+    function calcPerf(s) {
+      if (!s.actions && !s.findings) return '—';
+      const pct = s.findings > 0
+        ? Math.min(100, Math.round((s.findings / Math.max(s.actions, 1)) * 100))
+        : (s.actions > 0 ? Math.min(100, s.actions) : 0);
+      return pct + '%';
+    }
+
+    container.innerHTML = statuses.map(s => \`
+      <div class="table-row">
+        <div class="agent-name">\${formatType(s.type)}</div>
+        <div><span class="status-badge \${s.status}">\${s.status}</span></div>
+        <div>\${s.actions || 0}</div>
+        <div>\${calcPerf(s)}</div>
+      </div>
+    \`).join('');
+  }
+
   function switchAgentTab(tab) {
     activeAgentTab = tab; // persist so updateAgents() knows not to overwrite
     // Find tabs in the panel containing agents-table
@@ -1514,40 +1573,12 @@ export function getDashboardHTML(): string {
 
     if (tab === 'specialists') {
       agentsTabs[1]?.classList.add('active');
-      // Show specialists data
-      const container = document.getElementById('agents-list');
-      container.innerHTML = \`
-        <div class="table-row">
-          <div class="agent-name">Browser Specialist</div>
-          <div><span class="status-badge idle">idle</span></div>
-          <div>0</div>
-          <div>—</div>
-        </div>
-        <div class="table-row">
-          <div class="agent-name">API Tester</div>
-          <div><span class="status-badge idle">idle</span></div>
-          <div>0</div>
-          <div>—</div>
-        </div>
-        <div class="table-row">
-          <div class="agent-name">Auth Specialist</div>
-          <div><span class="status-badge idle">idle</span></div>
-          <div>0</div>
-          <div>—</div>
-        </div>
-        <div class="table-row">
-          <div class="agent-name">UI Tester</div>
-          <div><span class="status-badge idle">idle</span></div>
-          <div>0</div>
-          <div>—</div>
-        </div>
-        <div class="table-row">
-          <div class="agent-name">Security Scanner</div>
-          <div><span class="status-badge idle">idle</span></div>
-          <div>0</div>
-          <div>—</div>
-        </div>
-      \`;
+      // Render from cache (updated every 3s by WS) — or fetch if cache is empty
+      if (_cachedSpecialists.length > 0) {
+        renderSpecialistsTable(_cachedSpecialists);
+      } else {
+        document.getElementById('agents-list').innerHTML = '<div class="empty-state">No specialists running — start a session to activate them</div>';
+      }
     } else {
       agentsTabs[0]?.classList.add('active');
       // Reload agents data from correct endpoint

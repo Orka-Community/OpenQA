@@ -252,4 +252,60 @@ export class ProactiveKanbanManager {
   isDuplicate(title: string): boolean {
     return this.seededTitles.has(normaliseTitle(title));
   }
+
+  /**
+   * After specialists finish, move the corresponding seeded Kanban tickets
+   * to the correct column based on their result.
+   *
+   * Mapping:
+   *   specialist started  → in-progress (first time only)
+   *   specialist completed → done
+   *   specialist failed    → to-do (needs human attention)
+   */
+  async syncWithSpecialistResults(
+    statuses: Array<{ type: string; status: 'idle' | 'running' | 'completed' | 'failed' }>
+  ): Promise<void> {
+    if (statuses.length === 0) return;
+
+    const tickets = await this.db.getKanbanTickets();
+
+    // Map specialist type → relevant tag keywords
+    const tagMap: Record<string, string[]> = {
+      'security-scanner':        ['security', 'owasp'],
+      'sql-injection':           ['security', 'owasp'],
+      'xss-tester':              ['security', 'owasp'],
+      'auth-tester':             ['security', 'owasp'],
+      'github-security-auditor': ['security', 'owasp'],
+      'accessibility-tester':    ['accessibility', 'wcag'],
+      'performance-tester':      ['performance'],
+      'form-tester':             ['forms', 'functional'],
+      'component-tester':        ['ui', 'ux', 'improvement'],
+      'api-tester':              ['api', 'security'],
+      'navigation-tester':       ['functional'],
+      'github-code-reviewer':    ['tech-debt', 'improvement', 'missing-test'],
+      'github-issue-analyzer':   ['strategy', 'meta'],
+    };
+
+    for (const status of statuses) {
+      if (status.status === 'idle' || status.status === 'running') continue;
+
+      const baseType = status.type.startsWith('dynamic:') ? '' : status.type;
+      const relevantTags = (tagMap[baseType] || []);
+
+      if (relevantTags.length === 0) continue;
+
+      const targetColumn: KanbanTicket['column'] = status.status === 'completed' ? 'done' : 'to-do';
+
+      for (const ticket of tickets) {
+        // Only update tickets that are still in their initial seeded columns
+        if (ticket.column === 'done' || ticket.column === 'in-progress') continue;
+
+        const ticketTags = (ticket.tags || '').split(',').map(t => t.trim().toLowerCase());
+        const matches = relevantTags.some(tag => ticketTags.includes(tag));
+        if (!matches) continue;
+
+        await this.db.updateKanbanTicket(ticket.id, { column: targetColumn });
+      }
+    }
+  }
 }

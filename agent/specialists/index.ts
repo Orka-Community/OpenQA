@@ -8,6 +8,7 @@ import { GitHubTools } from '../tools/github.js';
 import { KanbanTools } from '../tools/kanban.js';
 
 export type AgentType =
+  // ── SaaS / web-app specialists (use browser tools) ──────────────────────────
   | 'form-tester'
   | 'security-scanner'
   | 'sql-injection'
@@ -18,8 +19,17 @@ export type AgentType =
   | 'api-tester'
   | 'auth-tester'
   | 'navigation-tester'
+  // ── GitHub repository specialists (use GitHub API tools only) ────────────────
+  | 'github-code-reviewer'
+  | 'github-security-auditor'
+  | 'github-issue-analyzer'
   // Dynamic agents generated at runtime by ProjectIntelligenceAnalyzer
   | `dynamic:${string}`;
+
+/** Returns true for GitHub-mode specialists that must NOT use browser tools. */
+export function isGithubSpecialist(type: AgentType): boolean {
+  return type === 'github-code-reviewer' || type === 'github-security-auditor' || type === 'github-issue-analyzer';
+}
 
 export interface AgentStatus {
   id: string;
@@ -337,7 +347,109 @@ EXECUTE ALL TESTS SYSTEMATICALLY.`,
 - Test deep linking and URL sharing
 - Verify redirects work properly
 - Test pagination and infinite scroll
-- Report navigation issues with affected URLs`
+- Report navigation issues with affected URLs`,
+
+  // ── GitHub repository specialists ─────────────────────────────────────────────
+  'github-code-reviewer': `You are a GitHub Code Quality Reviewer specialised in static analysis.
+
+MISSION: Analyse the repository's source code to identify quality issues, missing tests, and improvement opportunities.
+
+AVAILABLE TOOLS:
+- get_repository_info: Get repo metadata (language, topics, open issues count)
+- list_directory: Explore the repo tree
+- get_file_content: Read any source file
+- create_github_issue: Report quality issues (missing tests, bad patterns, tech debt)
+- create_kanban_ticket: Track improvement tasks on the Kanban board
+- update_kanban_ticket / get_kanban_board: Manage ticket lifecycle
+
+REVIEW STRATEGY:
+1. Call get_repository_info to understand the tech stack and open issues count
+2. Call list_directory("") to explore root files
+3. Read key files: README.md, package.json / pyproject.toml / pom.xml, CI configs (.github/workflows)
+4. Explore src/ or lib/ to sample 3-5 source files
+5. Look for:
+   - Missing or sparse test coverage (no __tests__, no .spec files)
+   - Large functions / files (>300 lines)
+   - Hardcoded secrets or credentials (API keys, passwords)
+   - Missing error handling (bare catch blocks, unhandled promises)
+   - Outdated or insecure dependencies
+   - Missing CI/CD pipeline
+   - No linter / formatter config
+6. For each issue found: create_github_issue + create_kanban_ticket
+
+KANBAN WORKFLOW:
+1. START → create_kanban_ticket "Code quality review" (backlog, medium)
+2. BEGIN → move to in-progress
+3. FINISH → move to to-do
+4. DONE → move to done
+
+Be specific — mention file paths and line ranges when reporting issues.`,
+
+  'github-security-auditor': `You are a GitHub Repository Security Auditor with deep OWASP expertise.
+
+MISSION: Audit the repository's code and configuration for security vulnerabilities.
+
+AVAILABLE TOOLS:
+- get_repository_info: Identify stack and visibility
+- list_directory: Map the repo structure
+- get_file_content: Read source files and configs
+- create_github_issue: Report security vulnerabilities (CRITICAL priority)
+- create_kanban_ticket / update_kanban_ticket / get_kanban_board: Track findings
+
+SECURITY CHECKS:
+1. get_repository_info — check if repo is public, count open issues
+2. list_directory("") — look for .env, .env.example, secrets.*, credentials.*
+3. If found: get_file_content(".env") — check for hardcoded secrets (CRITICAL if found)
+4. get_file_content("package.json") or equivalent — check for known vulnerable deps
+5. list_directory(".github/workflows") — audit CI pipeline for secret exposure
+6. Sample 2-3 source files — check for:
+   - eval() / exec() calls
+   - SQL string concatenation
+   - Unvalidated user input
+   - Missing auth guards
+   - Exposed debug endpoints
+7. For each vulnerability: create_github_issue (severity: critical/high) + create_kanban_ticket
+
+KANBAN WORKFLOW:
+1. START → create_kanban_ticket "Security audit" (backlog, critical)
+2. BEGIN → move to in-progress
+3. FINISH → move to to-do
+4. DONE → move to done
+
+Report ONLY real findings. Be precise about file paths and the exact lines with issues.`,
+
+  'github-issue-analyzer': `You are a GitHub Issue & Workflow Analyst.
+
+MISSION: Analyse the repository's open issues and pull requests to identify patterns, stale work, and QA gaps.
+
+AVAILABLE TOOLS:
+- get_repository_info: Get open issue count and repo stats
+- list_github_issues: Fetch open (and recent closed) issues
+- list_pull_requests: Fetch open and recently merged PRs
+- create_kanban_ticket: Create tasks from issue patterns
+- update_kanban_ticket / get_kanban_board: Manage Kanban lifecycle
+- create_github_issue: Create a meta-issue summarising QA gaps (optional)
+
+ANALYSIS STRATEGY:
+1. get_repository_info — note open_issues count
+2. list_github_issues(state: "open") — list open bugs
+3. list_github_issues(state: "closed", per_page: 20) — see recently fixed bugs
+4. list_pull_requests(state: "open") — note stale or long-running PRs
+5. Identify patterns:
+   - Recurring labels (crash, regression, security) → systemic problem
+   - Issues with no assignee and no comments > 7 days → stale/unacknowledged
+   - Open PRs > 14 days → review bottleneck
+   - Closed issues re-opened → regression risk
+6. For each pattern found: create_kanban_ticket with concrete recommendation
+7. Summarise findings in one create_github_issue if there are >= 3 systemic gaps
+
+KANBAN WORKFLOW:
+1. START → create_kanban_ticket "Issue & PR analysis" (backlog, medium)
+2. BEGIN → move to in-progress
+3. FINISH → move to to-do
+4. DONE → move to done
+
+Be concise and actionable — the team needs clear next steps, not raw data dumps.`,
 };
 
 export class SpecialistAgentManager extends EventEmitter {
@@ -382,22 +494,27 @@ export class SpecialistAgentManager extends EventEmitter {
 
   createSpecialist(type: AgentType, customPrompt?: string): string {
     const agentId = `${type}_${Date.now()}`;
-    
+
     const systemPrompt = customPrompt || SPECIALIST_PROMPTS[type as keyof typeof SPECIALIST_PROMPTS] || `You are a QA specialist agent named "${type}". Thoroughly test the target application and report any issues you find.`;
-    
+
     const llm = this.createLLMAdapter();
-    
-    // Combine all available tools
-    const allTools = [
-      ...this.browserTools.getTools(),
-      ...(this.githubTools ? this.githubTools.getTools() : []),
-      ...(this.kanbanTools ? this.kanbanTools.getTools() : [])
-    ];
-    
+
+    // GitHub specialists must NOT have browser tools — they work exclusively with the GitHub API.
+    const tools = isGithubSpecialist(type)
+      ? [
+          ...(this.githubTools ? this.githubTools.getTools() : []),
+          ...(this.kanbanTools ? this.kanbanTools.getTools() : []),
+        ]
+      : [
+          ...this.browserTools.getTools(),
+          ...(this.githubTools ? this.githubTools.getTools() : []),
+          ...(this.kanbanTools ? this.kanbanTools.getTools() : []),
+        ];
+
     const agent = new ReActAgent({
       name: type,
       goal: systemPrompt,
-      tools: allTools
+      tools
     }, llm);
 
     // Listen to agent events and log actions to DB
@@ -470,9 +587,24 @@ export class SpecialistAgentManager extends EventEmitter {
         description: `${status.type} specialist started testing ${targetUrl}`
       });
 
-      // Let the ReActAgent explore autonomously
-      const result = await agent.run(
-        `You are testing: ${targetUrl}
+      // Build the task prompt based on whether this is a GitHub repo or a web app
+      const isGithubTarget = targetUrl.includes('github.com/');
+      const taskPrompt = (isGithubTarget || isGithubSpecialist(status.type))
+        ? `You are auditing the GitHub repository: ${targetUrl}
+
+IMPORTANT: This is a SOURCE CODE repository, NOT a live web application.
+DO NOT use browser navigation tools. Use only the GitHub API tools available to you.
+
+Your mission:
+1. Call get_repository_info to understand the project
+2. Call list_directory("") to explore the root structure
+3. Read key files (README.md, package.json, CI configs, main source files)
+4. Analyse issues and PRs if available
+5. Create GitHub issues and Kanban tickets for any problems found
+
+Repository: ${targetUrl}
+Focus on your specialty. Be thorough but stay within 8 tool calls to avoid rate limits.`
+        : `You are testing: ${targetUrl}
 
 MISSION: Act like a real QA engineer. Explore thoroughly and test everything.
 
@@ -484,11 +616,11 @@ ACTION PLAN:
 5. Take screenshots of issues
 6. Create GitHub issues for critical bugs
 
-IMPORTANT: Don't just test the homepage. Explore at least 5-10 different pages.
-Click on everything. A real QA engineer would spend hours exploring every corner of the application.
+IMPORTANT: Don't just test the homepage. Explore at least 3-5 different pages.
+Be autonomous. Be thorough. Find real bugs.
+Stay within 10 tool calls to avoid rate limits.`;
 
-Be autonomous. Be thorough. Find real bugs.`
-      );
+      const result = await agent.run(taskPrompt);
 
       status.status = 'completed';
       status.completedAt = new Date();
@@ -650,7 +782,7 @@ Be autonomous. Be thorough. Find real bugs.`
             // Create GitHub issue if configured
             if (this.githubTools) {
               try {
-                const githubTool = this.githubTools.getTools()[0];
+                const githubTool = this.githubTools.getTools()[0] as any;
                 await githubTool.execute({
                   title: 'Potential XSS vulnerability in form input',
                   body: bugDescription,
@@ -705,7 +837,7 @@ Be autonomous. Be thorough. Find real bugs.`
         // Create GitHub issue for CRITICAL security issue
         if (this.githubTools) {
           try {
-            const githubTool = this.githubTools.getTools()[0];
+            const githubTool = this.githubTools.getTools()[0] as any;
             await githubTool.execute({
               title: 'CRITICAL: Application not using HTTPS',
               body: bugDescription,
@@ -802,7 +934,7 @@ Be autonomous. Be thorough. Find real bugs.`
               if (endpoint.includes('swagger') || endpoint.includes('api-docs') || endpoint.includes('graphql')) {
                 if (this.githubTools) {
                   try {
-                    const githubTool = this.githubTools.getTools()[0];
+                    const githubTool = this.githubTools.getTools()[0] as any;
                     await githubTool.execute({
                       title: `API documentation exposed: ${endpoint}`,
                       body: bugDescription,
@@ -862,7 +994,7 @@ Be autonomous. Be thorough. Find real bugs.`
           // Create GitHub issue IMMEDIATELY for CRITICAL vulnerability
           if (this.githubTools) {
             try {
-              const githubTool = this.githubTools.getTools()[0];
+              const githubTool = this.githubTools.getTools()[0] as any;
               await githubTool.execute({
                 title: 'CRITICAL: SQL Injection vulnerability in login form',
                 body: bugDescription,
@@ -929,7 +1061,7 @@ Be autonomous. Be thorough. Find real bugs.`
         if (severity === 'critical' || severity === 'high') {
           if (this.githubTools) {
             try {
-              const githubTool = this.githubTools.getTools()[0];
+              const githubTool = this.githubTools.getTools()[0] as any;
               await githubTool.execute({
                 title: issueTitle,
                 body: bugDescription,

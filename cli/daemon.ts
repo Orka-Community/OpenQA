@@ -603,6 +603,8 @@ wss.on('connection', async (ws) => {
         ws.send(JSON.stringify({
           type: 'session',
           data: {
+            id: latest.id,
+            status: latest.status,           // ← required so frontend knows isRunning
             active_agents: dbAgents.filter(a => a.status === 'running').length,
             total_actions: latest.total_actions || 0,
             bugs_found: latest.bugs_found || 0,

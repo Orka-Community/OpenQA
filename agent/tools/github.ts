@@ -67,7 +67,7 @@ ${screenshot_path ? `**Screenshot:** ${screenshot_path}` : ''}
               output: issue.data.html_url
             });
 
-            const bug = this.db.createBug({
+            this.db.createBug({
               session_id: this.sessionId,
               title,
               description: body,
@@ -82,7 +82,165 @@ ${screenshot_path ? `**Screenshot:** ${screenshot_path}` : ''}
             return { output: `❌ Failed to create GitHub issue: ${error instanceof Error ? error.message : String(error)}`, error: error instanceof Error ? error.message : String(error) };
           }
         }
-      }
+      },
+
+      {
+        name: 'get_repository_info',
+        description: 'Get metadata about the GitHub repository: description, language, topics, stats, open issue count.',
+        parameters: [],
+        execute: async () => {
+          if (!this.octokit || !this.config.owner || !this.config.repo) {
+            return { output: 'GitHub not configured.' };
+          }
+          try {
+            const [repo, langs] = await Promise.all([
+              this.octokit.rest.repos.get({ owner: this.config.owner, repo: this.config.repo }),
+              this.octokit.rest.repos.listLanguages({ owner: this.config.owner, repo: this.config.repo }),
+            ]);
+            const r = repo.data;
+            return {
+              output: JSON.stringify({
+                name: r.full_name,
+                description: r.description,
+                language: r.language,
+                languages: Object.keys(langs.data),
+                topics: r.topics,
+                stars: r.stargazers_count,
+                forks: r.forks_count,
+                open_issues: r.open_issues_count,
+                default_branch: r.default_branch,
+                has_wiki: r.has_wiki,
+                has_issues: r.has_issues,
+                license: r.license?.spdx_id,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+              }, null, 2)
+            };
+          } catch (error: unknown) {
+            return { output: `Failed to get repo info: ${error instanceof Error ? error.message : String(error)}` };
+          }
+        }
+      },
+
+      {
+        name: 'list_github_issues',
+        description: 'List open GitHub issues in the repository to understand existing bugs and problems.',
+        parameters: [
+          { name: 'state', type: 'string' as const, description: 'Filter by state: open, closed, all (default: open)', required: false },
+          { name: 'per_page', type: 'number' as const, description: 'Number of issues to fetch (max 30, default 20)', required: false },
+        ],
+        execute: async ({ state = 'open', per_page = 20 }: { state?: string; per_page?: number }) => {
+          if (!this.octokit || !this.config.owner || !this.config.repo) {
+            return { output: 'GitHub not configured.' };
+          }
+          try {
+            const res = await this.octokit.rest.issues.listForRepo({
+              owner: this.config.owner,
+              repo: this.config.repo,
+              state: state as 'open' | 'closed' | 'all',
+              per_page: Math.min(per_page, 30),
+            });
+            const issues = res.data.filter(i => !i.pull_request).map(i => ({
+              number: i.number,
+              title: i.title,
+              state: i.state,
+              labels: i.labels.map((l: any) => (typeof l === 'string' ? l : l.name)),
+              created_at: i.created_at,
+              comments: i.comments,
+              url: i.html_url,
+            }));
+            return { output: JSON.stringify(issues, null, 2) };
+          } catch (error: unknown) {
+            return { output: `Failed to list issues: ${error instanceof Error ? error.message : String(error)}` };
+          }
+        }
+      },
+
+      {
+        name: 'list_pull_requests',
+        description: 'List recent pull requests to understand code activity and potential quality concerns.',
+        parameters: [
+          { name: 'state', type: 'string' as const, description: 'open, closed, or all (default: open)', required: false },
+        ],
+        execute: async ({ state = 'open' }: { state?: string }) => {
+          if (!this.octokit || !this.config.owner || !this.config.repo) {
+            return { output: 'GitHub not configured.' };
+          }
+          try {
+            const res = await this.octokit.rest.pulls.list({
+              owner: this.config.owner,
+              repo: this.config.repo,
+              state: state as 'open' | 'closed' | 'all',
+              per_page: 15,
+            });
+            const prs = res.data.map(pr => ({
+              number: pr.number,
+              title: pr.title,
+              state: pr.state,
+              draft: pr.draft,
+              created_at: pr.created_at,
+              updated_at: pr.updated_at,
+              url: pr.html_url,
+            }));
+            return { output: JSON.stringify(prs, null, 2) };
+          } catch (error: unknown) {
+            return { output: `Failed to list PRs: ${error instanceof Error ? error.message : String(error)}` };
+          }
+        }
+      },
+
+      {
+        name: 'get_file_content',
+        description: 'Read the content of a specific file in the repository (e.g. package.json, README.md, src/index.ts). Use to audit dependencies, check for secrets, review code.',
+        parameters: [
+          { name: 'path', type: 'string' as const, description: 'File path relative to repo root (e.g. package.json)', required: true },
+        ],
+        execute: async ({ path }: { path: string }) => {
+          if (!this.octokit || !this.config.owner || !this.config.repo) {
+            return { output: 'GitHub not configured.' };
+          }
+          try {
+            const res = await this.octokit.rest.repos.getContent({
+              owner: this.config.owner,
+              repo: this.config.repo,
+              path,
+            });
+            const data = res.data as any;
+            if (data.type !== 'file') {
+              return { output: `${path} is a directory, not a file.` };
+            }
+            const content = Buffer.from(data.content, 'base64').toString('utf-8');
+            // Truncate large files to first 4000 chars to stay within tokens
+            return { output: content.length > 4000 ? content.slice(0, 4000) + '\n[... truncated]' : content };
+          } catch (error: unknown) {
+            return { output: `Failed to read ${path}: ${error instanceof Error ? error.message : String(error)}` };
+          }
+        }
+      },
+
+      {
+        name: 'list_directory',
+        description: 'List files and directories at a path in the repository.',
+        parameters: [
+          { name: 'path', type: 'string' as const, description: 'Directory path (default: root "")', required: false },
+        ],
+        execute: async ({ path = '' }: { path?: string }) => {
+          if (!this.octokit || !this.config.owner || !this.config.repo) {
+            return { output: 'GitHub not configured.' };
+          }
+          try {
+            const res = await this.octokit.rest.repos.getContent({
+              owner: this.config.owner,
+              repo: this.config.repo,
+              path,
+            });
+            const items = (res.data as any[]).map((f: any) => ({ name: f.name, type: f.type, path: f.path }));
+            return { output: JSON.stringify(items, null, 2) };
+          } catch (error: unknown) {
+            return { output: `Failed to list ${path}: ${error instanceof Error ? error.message : String(error)}` };
+          }
+        }
+      },
     ];
   }
 }
