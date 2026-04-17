@@ -2,7 +2,7 @@ import { Octokit } from '@octokit/rest';
 import { OpenQADatabase } from '../../database/index.js';
 
 export class GitHubTools {
-  private octokit: Octokit | null = null;
+  private octokit!: Octokit;
   private db: OpenQADatabase;
   private sessionId: string;
   private config: { token?: string; owner?: string; repo?: string };
@@ -11,10 +11,8 @@ export class GitHubTools {
     this.db = db;
     this.sessionId = sessionId;
     this.config = config;
-    
-    if (config.token) {
-      this.octokit = new Octokit({ auth: config.token });
-    }
+    // Always initialize Octokit — public repos work without a token (60 req/hr anon, 5000/hr with token)
+    this.octokit = new Octokit(config.token ? { auth: config.token } : {});
   }
 
   getTools() {
@@ -30,8 +28,8 @@ export class GitHubTools {
           { name: 'screenshot_path', type: 'string' as const, description: 'Path to screenshot evidence', required: false }
         ],
         execute: async ({ title, body, severity, labels = [], screenshot_path }: { title: string; body: string; severity: 'low' | 'medium' | 'high' | 'critical'; labels?: string[]; screenshot_path?: string }) => {
-          if (!this.octokit || !this.config.owner || !this.config.repo) {
-            return { output: 'GitHub not configured. Please set GITHUB_TOKEN, GITHUB_OWNER, and GITHUB_REPO.', error: 'GitHub not configured' };
+          if (!this.config.token || !this.config.owner || !this.config.repo) {
+            return { output: 'GitHub not configured. Creating issues requires GITHUB_TOKEN, GITHUB_OWNER, and GITHUB_REPO.', error: 'GitHub token required' };
           }
 
           try {
@@ -89,8 +87,8 @@ ${screenshot_path ? `**Screenshot:** ${screenshot_path}` : ''}
         description: 'Get metadata about the GitHub repository: description, language, topics, stats, open issue count.',
         parameters: [],
         execute: async () => {
-          if (!this.octokit || !this.config.owner || !this.config.repo) {
-            return { output: 'GitHub not configured.' };
+          if (!this.config.owner || !this.config.repo) {
+            return { output: 'GitHub owner and repo not configured.' };
           }
           try {
             const [repo, langs] = await Promise.all([
@@ -130,8 +128,8 @@ ${screenshot_path ? `**Screenshot:** ${screenshot_path}` : ''}
           { name: 'per_page', type: 'number' as const, description: 'Number of issues to fetch (max 30, default 20)', required: false },
         ],
         execute: async ({ state = 'open', per_page = 20 }: { state?: string; per_page?: number }) => {
-          if (!this.octokit || !this.config.owner || !this.config.repo) {
-            return { output: 'GitHub not configured.' };
+          if (!this.config.owner || !this.config.repo) {
+            return { output: 'GitHub owner and repo not configured.' };
           }
           try {
             const res = await this.octokit.rest.issues.listForRepo({
@@ -163,8 +161,8 @@ ${screenshot_path ? `**Screenshot:** ${screenshot_path}` : ''}
           { name: 'state', type: 'string' as const, description: 'open, closed, or all (default: open)', required: false },
         ],
         execute: async ({ state = 'open' }: { state?: string }) => {
-          if (!this.octokit || !this.config.owner || !this.config.repo) {
-            return { output: 'GitHub not configured.' };
+          if (!this.config.owner || !this.config.repo) {
+            return { output: 'GitHub owner and repo not configured.' };
           }
           try {
             const res = await this.octokit.rest.pulls.list({
@@ -196,8 +194,8 @@ ${screenshot_path ? `**Screenshot:** ${screenshot_path}` : ''}
           { name: 'path', type: 'string' as const, description: 'File path relative to repo root (e.g. package.json)', required: true },
         ],
         execute: async ({ path }: { path: string }) => {
-          if (!this.octokit || !this.config.owner || !this.config.repo) {
-            return { output: 'GitHub not configured.' };
+          if (!this.config.owner || !this.config.repo) {
+            return { output: 'GitHub owner and repo not configured.' };
           }
           try {
             const res = await this.octokit.rest.repos.getContent({
@@ -225,8 +223,8 @@ ${screenshot_path ? `**Screenshot:** ${screenshot_path}` : ''}
           { name: 'path', type: 'string' as const, description: 'Directory path (default: root "")', required: false },
         ],
         execute: async ({ path = '' }: { path?: string }) => {
-          if (!this.octokit || !this.config.owner || !this.config.repo) {
-            return { output: 'GitHub not configured.' };
+          if (!this.config.owner || !this.config.repo) {
+            return { output: 'GitHub owner and repo not configured.' };
           }
           try {
             const res = await this.octokit.rest.repos.getContent({
