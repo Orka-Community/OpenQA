@@ -83,6 +83,58 @@ export interface CoverageEntry {
   created_at: string;
 }
 
+export interface ProposedFinding {
+  id: string;
+  session_id: string;
+  title: string;
+  description: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  category: string;
+  confidence: number;
+  confidence_reasons: string;
+  evidence?: string;
+  url?: string;
+  specialist_type?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewer_note?: string;
+  created_at: string;
+  reviewed_at?: string;
+}
+
+export interface Schedule {
+  id: string;
+  name: string;
+  cron_expression: string;
+  target_url: string;
+  enabled: number;
+  last_run_at?: string;
+  next_run_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  url?: string;
+  github_owner?: string;
+  github_repo?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionBaseline {
+  id: string;
+  session_id: string;
+  previous_session_id?: string;
+  new_bugs: number;
+  fixed_bugs: number;
+  regression_titles: string;
+  improvement_titles: string;
+  created_at: string;
+}
+
 interface DatabaseSchema {
   config: Record<string, string>;
   test_sessions: TestSession[];

@@ -1,4 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { z } from 'zod';
 import { OpenQADatabase, Bug, KanbanTicket } from '../database/index.js';
 import { ConfigManager } from '../agent/config/index.js';
@@ -599,6 +600,224 @@ export function createApiRouter(db: OpenQADatabase, config: ConfigManager): Rout
       const report = await reportGenerator.generateReport(req.params.sessionId);
       const filepath = await reportGenerator.exportJSON(report);
       res.download(filepath, `openqa-report-${req.params.sessionId}.json`);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // ── Approvals (proposed findings pending human review) ──────────────────────
+
+  router.get('/api/approvals', async (req, res) => {
+    try {
+      const status = (req.query.status as string) || 'pending';
+      const findings = db.getProposedFindings(status as 'pending' | 'approved' | 'rejected');
+      res.json(findings);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/approvals/:id/approve', async (req, res) => {
+    try {
+      const { note } = req.body as { note?: string };
+      const finding = db.getProposedFinding(req.params.id);
+      if (!finding) return res.status(404).json({ error: 'Finding not found' });
+
+      db.reviewProposedFinding(req.params.id, 'approved', note);
+
+      // Auto-create kanban ticket on approval
+      await db.createKanbanTicket({
+        title: finding.title,
+        description: finding.description,
+        priority: finding.severity,
+        column: 'backlog',
+        tags: JSON.stringify(['automated-qa', 'approved', finding.category]),
+        screenshot_url: finding.evidence,
+      });
+
+      res.json({ success: true, message: 'Finding approved and kanban ticket created.' });
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/approvals/:id/reject', async (req, res) => {
+    try {
+      const { note } = req.body as { note?: string };
+      const finding = db.getProposedFinding(req.params.id);
+      if (!finding) return res.status(404).json({ error: 'Finding not found' });
+
+      db.reviewProposedFinding(req.params.id, 'rejected', note);
+      res.json({ success: true });
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // ── Schedules ────────────────────────────────────────────────────────────────
+
+  const scheduleCreateSchema = z.object({
+    name: z.string().min(1).max(200),
+    cron_expression: z.string().min(1).max(100),
+    target_url: z.string().min(1).max(2000),
+    enabled: z.boolean().optional().default(true),
+  });
+
+  const scheduleUpdateSchema = z.object({
+    name: z.string().min(1).max(200).optional(),
+    cron_expression: z.string().min(1).max(100).optional(),
+    target_url: z.string().min(1).max(2000).optional(),
+    enabled: z.boolean().optional(),
+  });
+
+  router.get('/api/schedules', async (_req, res) => {
+    try {
+      const schedules = db.getSchedules();
+      res.json(schedules);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/schedules', validate(scheduleCreateSchema), async (req, res) => {
+    try {
+      const { name, cron_expression, target_url, enabled } = req.body;
+      const schedule = db.createSchedule({ name, cron_expression, target_url, enabled: enabled ? 1 : 0 });
+      res.status(201).json(schedule);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.put('/api/schedules/:id', validate(scheduleUpdateSchema), async (req, res) => {
+    try {
+      const updates: Record<string, unknown> = { ...req.body };
+      if ('enabled' in updates) updates.enabled = updates.enabled ? 1 : 0;
+      db.updateSchedule(req.params.id, updates as Parameters<typeof db.updateSchedule>[1]);
+      res.json({ success: true });
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.delete('/api/schedules/:id', async (req, res) => {
+    try {
+      db.deleteSchedule(req.params.id);
+      res.json({ success: true });
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // ── Projects ─────────────────────────────────────────────────────────────────
+
+  const projectCreateSchema = z.object({
+    name: z.string().min(1).max(200),
+    description: z.string().max(1000).optional(),
+    url: z.string().max(2000).optional(),
+    github_owner: z.string().max(100).optional(),
+    github_repo: z.string().max(100).optional(),
+  });
+
+  router.get('/api/projects', async (_req, res) => {
+    try {
+      const projects = db.getProjects();
+      res.json(projects);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/projects', validate(projectCreateSchema), async (req, res) => {
+    try {
+      const project = db.createProject(req.body);
+      res.status(201).json(project);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.delete('/api/projects/:id', async (req, res) => {
+    try {
+      db.deleteProject(req.params.id);
+      res.json({ success: true });
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // ── Session baseline ─────────────────────────────────────────────────────────
+
+  router.get('/api/sessions/:id/baseline', async (req, res) => {
+    try {
+      const baseline = db.getBaseline(req.params.id);
+      if (!baseline) return res.status(404).json({ error: 'No baseline found for this session' });
+      res.json(baseline);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // ── Executive report ─────────────────────────────────────────────────────────
+
+  router.get('/api/reports/:sessionId/executive', async (req, res) => {
+    try {
+      const filepath = await reportGenerator.generateExecutiveReport(req.params.sessionId);
+      res.download(filepath, `openqa-executive-${req.params.sessionId}.html`);
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // ── GitHub Actions webhook ────────────────────────────────────────────────────
+  // Expects X-Hub-Signature-256 HMAC header signed with WEBHOOK_SECRET env var.
+  // Triggers an autonomous run on push/pull_request events.
+
+  router.post('/api/webhook/github', async (req, res) => {
+    try {
+      const secret = process.env.WEBHOOK_SECRET;
+      if (secret) {
+        const sig = req.headers['x-hub-signature-256'] as string | undefined;
+        if (!sig) return res.status(401).json({ error: 'Missing X-Hub-Signature-256 header' });
+
+        const raw = JSON.stringify(req.body);
+        const expected = 'sha256=' + createHmac('sha256', secret).update(raw).digest('hex');
+        const sigBuf = Buffer.from(sig);
+        const expBuf = Buffer.from(expected);
+
+        if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
+          return res.status(401).json({ error: 'Invalid signature' });
+        }
+      }
+
+      const event = req.headers['x-github-event'] as string;
+      const payload = req.body as { repository?: { full_name?: string }; ref?: string };
+
+      // Only act on push to default branch or pull_request events
+      if (event !== 'push' && event !== 'pull_request') {
+        return res.json({ ignored: true, reason: `event ${event} not handled` });
+      }
+
+      const repoName = payload.repository?.full_name || 'unknown';
+      const cfg = await config.getAll();
+      const saasUrl = cfg.saas?.url as string | undefined;
+
+      if (!saasUrl) {
+        return res.status(400).json({ error: 'No SaaS URL configured — set saas.url in /config' });
+      }
+
+      // Fire an autonomous run asynchronously — do not await
+      const { OpenQAAgentV2 } = await import('../agent/index-v2.js');
+      const webhookAgent = new OpenQAAgentV2();
+      await webhookAgent.configureSaaS({
+        name: `Webhook run — ${repoName} (${event})`,
+        description: `Triggered by GitHub ${event} on ${repoName}`,
+        url: saasUrl,
+        auth: { type: 'none', credentials: { username: '', password: '' } },
+      });
+      webhookAgent.runAutonomous(10).catch(() => { /* background — ignore */ });
+
+      res.json({ success: true, triggered: true, event, repo: repoName });
     } catch (error: unknown) {
       res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }

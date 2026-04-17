@@ -1,5 +1,134 @@
 # @openqa/cli
 
+## 3.0.0
+
+### Major Changes
+
+#### Backend Testing — Autonomous Project Detection
+
+OpenQA can now test **backend API projects** in addition to web frontends. When a GitHub or GitLab URL is configured, OpenQA automatically detects the project type, language, and framework by reading manifest files — without any LLM call.
+
+**Supported stacks (auto-detected):**
+- **Node.js / TypeScript** — Express, Fastify, NestJS, Koa, Hapi, Next.js
+- **Python** — FastAPI, Django, Flask, Aiohttp, Starlette, Sanic
+- **Go** — Gin, Echo, Fiber, Chi, gorilla/mux, net/http
+- **Rust** — Actix-web, Axum, Rocket, Warp
+- **Java / Kotlin** — Spring Boot, Quarkus, Micronaut, Vert.x
+- **Ruby** — Rails, Sinatra, Grape, Hanami
+- **PHP** — Laravel, Symfony, Slim, Lumen
+- **Elixir** — Phoenix
+- **C# / .NET** — ASP.NET Core
+
+**4 new backend specialists:**
+- `backend-api-tester` — discovers and security-tests all live API endpoints (auth, injection, CORS, rate limiting)
+- `backend-code-auditor` — static code analysis across any language (secrets, SQL concatenation, missing error handling)
+- `backend-security-auditor` — OWASP API Security Top 10 (2023) full audit, both static and live
+- `backend-dependency-scanner` — CVE detection, missing lockfiles, wildcard versions, absence of `npm audit` / `pip-audit` in CI
+
+**New `BackendProfile` in `ProjectIntelligence`:**
+```typescript
+{
+  projectType: 'backend-only' | 'frontend-only' | 'fullstack' | 'library' | 'cli' | 'mobile' | 'unknown',
+  language: string,    // 'python', 'go', 'typescript', 'java', 'rust', ...
+  framework: string,   // 'fastapi', 'express', 'gin', 'spring', ...
+  hasSwaggerDocs: boolean,
+  hasTestSuite: boolean,
+  testCommand?: string,    // e.g. 'pytest', 'go test ./...'
+  detectedEndpoints: string[],  // extracted from source code
+}
+```
+
+#### HTTP Testing Tools — New `ApiHttpTools`
+
+5 new tools for HTTP-level backend testing (no browser required):
+
+| Tool | Description |
+|------|-------------|
+| `test_http_endpoint` | HTTP request + security header analysis + secret exposure detection |
+| `discover_api_endpoints` | Probes 30+ common paths to map the live API surface |
+| `test_endpoint_auth` | 5 invalid token variants — flags endpoints accessible without auth |
+| `test_endpoint_injection` | 10 payloads: SQLi, NoSQLi, XSS, mass assignment, prototype pollution |
+| `test_rate_limiting` | 20 concurrent requests — detects missing 429 protection |
+| `check_cors_policy` | Wildcard origin, credentials bypass, null origin |
+
+#### Enterprise Features
+
+**Deduplication pipeline:**
+- SHA-256 fingerprint per finding (`title + url + category`)
+- Duplicate findings silently skipped before any ticket is created
+
+**Confidence scoring:**
+- Every finding scored 0–100 based on evidence quality
+- `≥ 75` → auto-approved, ticket created immediately
+- `50–74` → queued for human review at `/approvals`
+- `< 50` → discarded (false positive)
+
+**Human approval workflow:**
+- `GET /api/approvals` — list pending findings
+- `POST /api/approvals/:id/approve` — approve → auto-creates Kanban ticket
+- `POST /api/approvals/:id/reject` — reject with optional note
+
+**Scheduled runs:**
+- Full CRUD: `GET/POST /api/schedules`, `PUT /api/schedules/:id`, `DELETE /api/schedules/:id`
+- Background cron job checks every 60 seconds, fires due sessions autonomously
+
+**Session timeout:**
+- Background job (every 5 min) marks sessions running > 2h as `failed`
+
+**Session baseline & regression detection:**
+- `GET /api/sessions/:id/baseline` — compares current session bugs vs previous session
+- Detects regressions (bugs that reappeared) and improvements (bugs that were fixed)
+
+**External integrations:**
+- **Jira** — REST API v3, Basic auth, severity→priority mapping, ADF description format
+- **Linear** — GraphQL API, priority 1–4, rich markdown description
+- **Azure DevOps** — REST API v7, JSON Patch document format
+
+**Executive report:**
+- `GET /api/reports/:sessionId/executive` — single-page print-ready HTML
+- QA score circle (green/amber/red), 3 key metrics, top 5 issues, recommendations
+
+**GitHub Actions webhook:**
+- `POST /api/webhook/github` — HMAC `X-Hub-Signature-256` validation
+- Triggers an autonomous run on `push` and `pull_request` events
+
+#### Browser Tools Enhancements
+
+- `get_page_content` — returns structured JSON: title, 3000-char text sample, 40 links, all forms + fields, 25 buttons, 25 inputs
+- `find_element_by_text` — semantic click by visible text (robust for React/Vue dynamic class names)
+- `wait_for_element` — waits up to 10s for a CSS selector to appear (essential for SPAs)
+- `check_console_errors` — captures JS runtime errors with proper cleanup
+- Auto-installs Playwright Chromium if not present (`npx playwright install chromium --with-deps`)
+
+#### Parallel Specialist Execution
+
+Specialists now run in a **concurrency pool** instead of sequentially:
+- SaaS mode: max 2 concurrent specialists
+- GitHub mode: 1 at a time (API rate limit–aware)
+- Rate limit errors trigger a 30-second pause and retry
+
+#### Intelligence Phase — LLM Fallback for Opaque URLs
+
+When static analysis confidence is low (unknown domain, no URL signals), a single small LLM call (~150 input tokens) classifies the app. The LLM result enriches but never overrides static evidence.
+
+### Minor Changes
+
+- GitHub mode: `Octokit` always initialized — public repos work without a token (60 req/hr anonymous)
+- Session `isRunning` flag always reset via `try-finally` even if brain throws
+- GitHub mode skips the `think()` loop (no browser to navigate — saved 10 wasted LLM calls per session)
+- Specialists use a fast/cheap model (`gpt-4o-mini` / `claude-haiku`) — 20× more TPM headroom
+- `tsconfig.json` now includes `"DOM"` lib for `page.evaluate()` callbacks
+
+### Bug Fixes
+
+- Fixed: GitHub "not configured" error on public repos without a token
+- Fixed: Sessions stuck at 0 actions when LLM fails during Phase 1 analysis
+- Fixed: `trackPageVisit` called with invalid `"inspect"` action type
+- Fixed: `specialistModel` property missing from brain's `llmConfig` type
+- Fixed: `TS2584` / `TS2304` on `document` / `HTMLElement` in browser tool evaluate callbacks
+
+---
+
 ## 2.1.26
 
 ### Patch Changes

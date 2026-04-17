@@ -816,7 +816,7 @@ async function broadcastLatestMetrics() {
     // Always create agent to load SaaS config (even if not auto-starting)
     await ensureAgent();
     logger.info('Agent initialized with SaaS configuration');
-    
+
     // Auto-start agent if configured
     if (cfg.agent?.autoStart) {
       const a = await ensureAgent();
@@ -826,6 +826,68 @@ async function broadcastLatestMetrics() {
         a.runAutonomous().catch((e: Error) => logger.error('Auto-start failed', { error: e.message }));
       }
     }
+
+    // ── Background job: session timeout (every 5 min) ─────────────────────────
+    // Sessions running for more than 2 hours are marked as failed.
+    setInterval(async () => {
+      try {
+        const sessions = await db.getRecentSessions(100);
+        const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+        const now = Date.now();
+        const timedOut = sessions.filter(
+          (s: { status: string; started_at: string }) =>
+            s.status === 'running' && now - new Date(s.started_at).getTime() > TWO_HOURS_MS
+        );
+        for (const s of timedOut) {
+          await db.updateSession(s.id, { status: 'failed', ended_at: new Date().toISOString() });
+          logger.warn('Session timed out after 2h', { sessionId: s.id });
+        }
+      } catch (e) {
+        logger.warn('Session timeout job error', { error: e instanceof Error ? e.message : String(e) });
+      }
+    }, 5 * 60 * 1000); // every 5 minutes
+
+    // ── Background job: cron scheduler (every 60 s) ───────────────────────────
+    // Checks the schedules table and fires due sessions.
+    setInterval(async () => {
+      try {
+        const schedules = db.getSchedules();
+        const now = new Date();
+
+        for (const schedule of schedules) {
+          if (!schedule.enabled) continue;
+          if (!schedule.next_run_at) continue;
+
+          const nextRun = new Date(schedule.next_run_at);
+          if (now < nextRun) continue;
+
+          // Fire an autonomous run for this schedule
+          logger.info('Firing scheduled QA run', { name: schedule.name, url: schedule.target_url });
+          try {
+            const scheduleAgent = new (await import('../agent/index-v2.js')).OpenQAAgentV2();
+            await scheduleAgent.configureSaaS({
+              name: schedule.name,
+              description: `Scheduled run for ${schedule.target_url}`,
+              url: schedule.target_url,
+              auth: { type: 'none', credentials: { username: '', password: '' } },
+            });
+            scheduleAgent.runAutonomous(15).catch(() => { /* background */ });
+          } catch (fireErr) {
+            logger.error('Failed to fire scheduled run', { name: schedule.name, error: fireErr instanceof Error ? fireErr.message : String(fireErr) });
+          }
+
+          // Update last_run_at and compute next_run_at (+1 day simple fallback)
+          const nextMs = nextRun.getTime() + 24 * 60 * 60 * 1000; // naive +1d; real cron parsing optional
+          db.updateSchedule(schedule.id, {
+            last_run_at: now.toISOString(),
+            next_run_at: new Date(nextMs).toISOString(),
+          });
+        }
+      } catch (e) {
+        logger.warn('Cron scheduler job error', { error: e instanceof Error ? e.message : String(e) });
+      }
+    }, 60_000); // every minute
+
   } catch (e) {
     logger.error('Failed to initialize agent', { error: e instanceof Error ? e.message : String(e) });
   }

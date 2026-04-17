@@ -1,11 +1,15 @@
 import { Octokit } from '@octokit/rest';
 import { OpenQADatabase } from '../../database/index.js';
+import { FindingDeduplicator } from '../dedup/index.js';
+import { ConfidenceScorer } from '../confidence/index.js';
 
 export class GitHubTools {
   private octokit!: Octokit;
   private db: OpenQADatabase;
   private sessionId: string;
   private config: { token?: string; owner?: string; repo?: string };
+  private dedup: FindingDeduplicator;
+  private confidence: ConfidenceScorer;
 
   constructor(db: OpenQADatabase, sessionId: string, config: { token?: string; owner?: string; repo?: string }) {
     this.db = db;
@@ -13,6 +17,8 @@ export class GitHubTools {
     this.config = config;
     // Always initialize Octokit — public repos work without a token (60 req/hr anon, 5000/hr with token)
     this.octokit = new Octokit(config.token ? { auth: config.token } : {});
+    this.dedup = new FindingDeduplicator(db);
+    this.confidence = new ConfidenceScorer();
   }
 
   getTools() {
@@ -27,14 +33,74 @@ export class GitHubTools {
           { name: 'labels', type: 'string' as const, description: 'Comma-separated labels for the issue', required: false },
           { name: 'screenshot_path', type: 'string' as const, description: 'Path to screenshot evidence', required: false }
         ],
-        execute: async ({ title, body, severity, labels = [], screenshot_path }: { title: string; body: string; severity: 'low' | 'medium' | 'high' | 'critical'; labels?: string[]; screenshot_path?: string }) => {
+        execute: async ({
+          title,
+          body,
+          severity,
+          labels,
+          screenshot_path,
+          url = '',
+          category = 'general',
+          specialist_type,
+        }: {
+          title: string;
+          body: string;
+          severity: 'low' | 'medium' | 'high' | 'critical';
+          labels?: string | string[];
+          screenshot_path?: string;
+          url?: string;
+          category?: string;
+          specialist_type?: string;
+        }) => {
           if (!this.config.token || !this.config.owner || !this.config.repo) {
             return { output: 'GitHub not configured. Creating issues requires GITHUB_TOKEN, GITHUB_OWNER, and GITHUB_REPO.', error: 'GitHub token required' };
           }
 
           try {
+            // ── 1. Duplicate check ──────────────────────────────────────────
+            const { isDuplicate, fingerprint } = this.dedup.checkAndRegister(title, url, category);
+            if (isDuplicate) {
+              return { output: `⚠️ Duplicate finding skipped (already reported): "${title}" [fp: ${fingerprint}]` };
+            }
+
+            // ── 2. Confidence scoring ───────────────────────────────────────
+            const result = this.confidence.score({
+              title,
+              description: body,
+              severity,
+              evidence: screenshot_path,
+              specialist_type,
+              category,
+            });
+
+            if (result.verdict === 'discard') {
+              return {
+                output: `🗑️ Finding discarded (low confidence ${result.score}/100): "${title}"\nReasons: ${result.reasons.join(', ')}`
+              };
+            }
+
+            if (result.verdict === 'needs-review') {
+              this.db.createProposedFinding({
+                session_id: this.sessionId,
+                title,
+                description: body,
+                severity,
+                category,
+                confidence: result.score,
+                confidence_reasons: result.reasons,
+                evidence: screenshot_path,
+                url,
+                specialist_type,
+              });
+              return {
+                output: `🔍 Finding queued for human review (confidence ${result.score}/100): "${title}"\nGo to /approvals to review.\nReasons: ${result.reasons.join(', ')}`
+              };
+            }
+
+            // ── 3. Auto-approve: create GitHub issue ────────────────────────
+            const labelsArray: string[] = Array.isArray(labels) ? labels : (labels ? [labels] : []);
             const severityLabel = `severity: ${severity}`;
-            const allLabels = ['automated-qa', severityLabel, ...labels];
+            const allLabels = ['automated-qa', severityLabel, ...labelsArray];
 
             const issueBody = `## 🤖 Automated QA Report
 
@@ -43,6 +109,7 @@ ${body}
 ---
 
 **Severity:** ${severity.toUpperCase()}
+**Confidence:** ${result.score}/100
 **Detected by:** OpenQA Agent
 **Session ID:** ${this.sessionId}
 ${screenshot_path ? `**Screenshot:** ${screenshot_path}` : ''}
@@ -75,7 +142,7 @@ ${screenshot_path ? `**Screenshot:** ${screenshot_path}` : ''}
               screenshot_path
             });
 
-            return { output: `✅ GitHub issue created successfully!\nURL: ${issue.data.html_url}\nIssue #${issue.data.number}` };
+            return { output: `✅ GitHub issue created (confidence ${result.score}/100, auto-approved)!\nURL: ${issue.data.html_url}\nIssue #${issue.data.number}` };
           } catch (error: unknown) {
             return { output: `❌ Failed to create GitHub issue: ${error instanceof Error ? error.message : String(error)}`, error: error instanceof Error ? error.message : String(error) };
           }

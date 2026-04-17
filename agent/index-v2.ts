@@ -215,10 +215,18 @@ export class OpenQAAgentV2 extends EventEmitter {
 
     this.isRunning = true;
     logger.info('Starting autonomous QA session', { session: this.sessionId });
-    
-    await this.brain!.runAutonomously(maxIterations);
-    
-    this.isRunning = false;
+
+    try {
+      await this.brain!.runAutonomously(maxIterations);
+    } catch (err) {
+      logger.error('Brain runAutonomously threw an unhandled error', {
+        error: err instanceof Error ? err.message : String(err),
+        session: this.sessionId,
+      });
+      throw err; // re-throw so .catch(console.error) in daemon logs it
+    } finally {
+      this.isRunning = false;
+    }
   }
 
   /**

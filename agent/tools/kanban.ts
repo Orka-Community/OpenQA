@@ -1,12 +1,18 @@
 import { OpenQADatabase, KanbanTicket } from '../../database/index.js';
+import { FindingDeduplicator } from '../dedup/index.js';
+import { ConfidenceScorer } from '../confidence/index.js';
 
 export class KanbanTools {
   private db: OpenQADatabase;
   private sessionId: string;
+  private dedup: FindingDeduplicator;
+  private confidence: ConfidenceScorer;
 
   constructor(db: OpenQADatabase, sessionId: string) {
     this.db = db;
     this.sessionId = sessionId;
+    this.dedup = new FindingDeduplicator(db);
+    this.confidence = new ConfidenceScorer();
   }
 
   getTools() {
@@ -20,11 +26,77 @@ export class KanbanTools {
           { name: 'priority', type: 'string' as const, description: 'Ticket priority (low, medium, high, critical)', required: true },
           { name: 'column', type: 'string' as const, description: 'Kanban column (backlog, to-do, in-progress, done)', required: false },
           { name: 'tags', type: 'string' as const, description: 'Comma-separated tags for categorization', required: false },
-          { name: 'screenshot_path', type: 'string' as const, description: 'Path to screenshot evidence', required: false }
+          { name: 'screenshot_path', type: 'string' as const, description: 'Path to screenshot evidence', required: false },
+          { name: 'url', type: 'string' as const, description: 'URL where the finding was discovered', required: false },
+          { name: 'category', type: 'string' as const, description: 'Finding category (e.g. security, ui, performance)', required: false },
+          { name: 'specialist_type', type: 'string' as const, description: 'Specialist that found this (e.g. security-scanner)', required: false }
         ],
-        execute: async ({ title, description, priority, column = 'backlog', tags = [], screenshot_path }: { title: string; description: string; priority: KanbanTicket['priority']; column?: KanbanTicket['column']; tags?: string[]; screenshot_path?: string }) => {
+        execute: async ({
+          title,
+          description,
+          priority,
+          column = 'backlog',
+          tags,
+          screenshot_path,
+          url = '',
+          category = 'general',
+          specialist_type,
+        }: {
+          title: string;
+          description: string;
+          priority: KanbanTicket['priority'];
+          column?: KanbanTicket['column'];
+          tags?: string | string[];
+          screenshot_path?: string;
+          url?: string;
+          category?: string;
+          specialist_type?: string;
+        }) => {
           try {
-            const allTags = ['automated-qa', ...tags];
+            // ── 1. Duplicate check ──────────────────────────────────────────
+            const { isDuplicate, fingerprint } = this.dedup.checkAndRegister(title, url, category);
+            if (isDuplicate) {
+              return { output: `⚠️ Duplicate finding skipped (already reported): "${title}" [fp: ${fingerprint}]` };
+            }
+
+            // ── 2. Confidence scoring ───────────────────────────────────────
+            const result = this.confidence.score({
+              title,
+              description,
+              severity: priority as 'low' | 'medium' | 'high' | 'critical',
+              evidence: screenshot_path,
+              specialist_type,
+              category,
+            });
+
+            if (result.verdict === 'discard') {
+              return {
+                output: `🗑️ Finding discarded (low confidence ${result.score}/100): "${title}"\nReasons: ${result.reasons.join(', ')}`
+              };
+            }
+
+            if (result.verdict === 'needs-review') {
+              // Queue for human approval instead of creating ticket immediately
+              this.db.createProposedFinding({
+                session_id: this.sessionId,
+                title,
+                description,
+                severity: priority as 'low' | 'medium' | 'high' | 'critical',
+                category,
+                confidence: result.score,
+                confidence_reasons: result.reasons,
+                evidence: screenshot_path,
+                url,
+                specialist_type,
+              });
+              return {
+                output: `🔍 Finding queued for human review (confidence ${result.score}/100): "${title}"\nGo to /approvals to review.\nReasons: ${result.reasons.join(', ')}`
+              };
+            }
+
+            // ── 3. Auto-approve: create kanban ticket ───────────────────────
+            const tagsArray: string[] = Array.isArray(tags) ? tags : (tags ? [tags] : []);
+            const allTags = ['automated-qa', ...tagsArray];
 
             const ticket = await this.db.createKanbanTicket({
               title,
@@ -43,9 +115,14 @@ export class KanbanTools {
               output: ticket.id
             });
 
-            return { output: `✅ Kanban ticket created successfully!\nID: ${ticket.id}\nColumn: ${column}\nPriority: ${priority}` };
+            return {
+              output: `✅ Kanban ticket created (confidence ${result.score}/100, auto-approved)!\nID: ${ticket.id}\nColumn: ${column}\nPriority: ${priority}`
+            };
           } catch (error: unknown) {
-            return { output: `❌ Failed to create Kanban ticket: ${error instanceof Error ? error.message : String(error)}`, error: error instanceof Error ? error.message : String(error) };
+            return {
+              output: `❌ Failed to create Kanban ticket: ${error instanceof Error ? error.message : String(error)}`,
+              error: error instanceof Error ? error.message : String(error)
+            };
           }
         }
       },
@@ -78,7 +155,7 @@ export class KanbanTools {
         execute: async () => {
           try {
             const tickets = await this.db.getKanbanTickets();
-            
+
             const byColumn = {
               backlog: tickets.filter((t) => t.column === 'backlog'),
               'to-do': tickets.filter((t) => t.column === 'to-do'),

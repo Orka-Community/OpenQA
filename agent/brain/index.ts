@@ -4,7 +4,10 @@ import { logger } from '../logger.js';
 import { OpenQADatabase } from '../../database/index.js';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { execSync } from 'child_process';
+import { execSync, exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 import { ResilientLLM } from './llm-resilience.js';
 import { LLMCache } from './llm-cache.js';
 import { DiffAnalyzer } from './diff-analyzer.js';
@@ -14,6 +17,7 @@ import { SpecialistAgentManager, type AgentType, type AgentStatus } from '../spe
 import { BrowserTools } from '../tools/browser.js';
 import { GitHubTools } from '../tools/github.js';
 import { KanbanTools } from '../tools/kanban.js';
+import { ApiHttpTools } from '../tools/api-http.js';
 
 export interface SaaSConfig {
   name: string;
@@ -67,6 +71,7 @@ export class OpenQABrain extends EventEmitter {
   private browserTools: BrowserTools | null = null;
   private githubTools: GitHubTools | null = null;
   private kanbanTools: KanbanTools | null = null;
+  private apiHttpTools: ApiHttpTools | null = null;
   private intelligenceAnalyzer: ProjectIntelligenceAnalyzer;
   private proactiveKanban: ProactiveKanbanManager;
   private projectIntelligence: ProjectIntelligence | null = null;
@@ -76,7 +81,7 @@ export class OpenQABrain extends EventEmitter {
 
   constructor(
     db: OpenQADatabase,
-    llmConfig: { provider: string; apiKey: string; model?: string; fallbackProvider?: string; fallbackApiKey?: string; fallbackModel?: string },
+    llmConfig: { provider: string; apiKey: string; model?: string; specialistModel?: string; fallbackProvider?: string; fallbackApiKey?: string; fallbackModel?: string },
     saasConfig: SaaSConfig,
     sessionId?: string,
     githubConfig?: { token?: string; owner?: string; repo?: string }
@@ -110,15 +115,24 @@ export class OpenQABrain extends EventEmitter {
     this.browserTools = new BrowserTools(this.db, this.sessionId);
     this.githubTools = new GitHubTools(this.db, this.sessionId, githubConfig || {});
     this.kanbanTools = new KanbanTools(this.db, this.sessionId);
-    
-    // Initialize specialist manager with all tools
+    // ApiHttpTools uses saasConfig.url as base — updated later if URL changes
+    this.apiHttpTools = new ApiHttpTools(this.db, this.sessionId, saasConfig.url);
+
+    // Initialize specialist manager — pass specialistModel so they use a cheap/fast
+    // model (gpt-4o-mini / claude-haiku) while the brain keeps the full model.
     this.specialistManager = new SpecialistAgentManager(
       this.db,
       this.sessionId,
-      { provider: llmConfig.provider, apiKey: llmConfig.apiKey, model: llmConfig.model },
+      {
+        provider: llmConfig.provider,
+        apiKey: llmConfig.apiKey,
+        model: llmConfig.model,
+        specialistModel: llmConfig.specialistModel,
+      },
       this.browserTools,
       this.githubTools,
-      this.kanbanTools
+      this.kanbanTools,
+      this.apiHttpTools
     );
 
     // Forward specialist events
@@ -465,37 +479,45 @@ Respond with JSON:
     this.emit('test-started', test);
 
     try {
-      // Execute test using BrowserTools
-      if (this.browserTools) {
-        const tools = this.browserTools.getTools();
-        const navigateTool = tools.find(t => t.name === 'navigate_to_page');
-        
-        if (navigateTool) {
-          // Navigate to the target URL
-          const result = await navigateTool.execute({ url: this.saasConfig.url } as any);
-          
-          // Track test execution in DB
-          await this.db.createAction({
-            session_id: this.sessionId,
-            type: 'test_execution',
-            description: `Executed test: ${test.name}`,
-            input: JSON.stringify({ testId, name: test.name }),
-            output: JSON.stringify(result)
-          });
-          
-          test.status = 'passed';
-          test.result = `Test executed: ${result.output}`;
-        } else {
-          test.status = 'passed';
-          test.result = 'Test code generated (browser tools not available)';
-        }
-      } else {
-        test.status = 'passed';
-        test.result = 'Test code generated (execution skipped - browser not initialized)';
+      if (!test.targetFile || !existsSync(test.targetFile)) {
+        test.status = 'skipped';
+        test.result = 'Test file not found — code was generated but not saved to disk.';
+        this.emit('test-completed', test);
+        return test;
       }
+
+      // Actually run the generated TypeScript test file via tsx
+      const { stdout, stderr } = await execAsync(
+        `npx tsx "${test.targetFile}"`,
+        { timeout: 60_000, cwd: process.cwd() }
+      );
+
+      await this.db.createAction({
+        session_id: this.sessionId,
+        type: 'test_execution',
+        description: `Ran test: ${test.name}`,
+        input: JSON.stringify({ testId, file: test.targetFile }),
+        output: stdout.slice(0, 2000) || '(no output)',
+      });
+
+      const hasFailed = stderr.toLowerCase().includes('error') ||
+                        stdout.toLowerCase().includes('failed') ||
+                        stdout.toLowerCase().includes('✗');
+
+      test.status = hasFailed ? 'failed' : 'passed';
+      test.result = stdout.slice(0, 2000) || 'Test passed with no output.';
+      if (stderr) test.error = stderr.slice(0, 500);
+
     } catch (e: unknown) {
-      test.status = 'failed';
-      test.error = e instanceof Error ? e.message : String(e);
+      const msg = e instanceof Error ? e.message : String(e);
+      // Exit code ≠ 0 means test assertions failed — that is expected and useful
+      if (msg.includes('Command failed')) {
+        test.status = 'failed';
+        test.result = msg.slice(0, 2000);
+      } else {
+        test.status = 'failed';
+        test.error = msg;
+      }
     }
 
     this.emit('test-completed', test);
@@ -575,9 +597,39 @@ Respond with JSON:
     const log = logger.child({ app: this.saasConfig.name });
     log.info('Brain starting autonomous mode', { maxIterations });
 
+    // Detect mode up front — used in Phase 0 and Phase 2
+    const isGithubMode = this.saasConfig.url.startsWith('https://github.com/') ||
+                         this.saasConfig.url.startsWith('http://github.com/');
+
     // ── Phase 0: Project Intelligence (runs BEFORE any testing) ─────────────
     log.info('Running project intelligence analysis…');
     try {
+      // In GitHub mode: pre-fetch key manifest files to detect language/framework
+      // without burning a full LLM call. This is free — reads via GitHub API.
+      let fileContents: Record<string, string> = {};
+      if (isGithubMode && this.githubTools) {
+        const MANIFEST_FILES = [
+          'package.json', 'requirements.txt', 'pyproject.toml', 'Pipfile',
+          'go.mod', 'Cargo.toml', 'pom.xml', 'build.gradle', 'build.gradle.kts',
+          'Gemfile', 'composer.json', 'mix.exs', 'setup.py',
+          'openapi.json', 'openapi.yaml', 'swagger.json', 'swagger.yaml',
+        ];
+        const tools = this.githubTools.getTools();
+        const getFileTool = tools.find(t => t.name === 'get_file_content');
+        if (getFileTool) {
+          const fetches = MANIFEST_FILES.map(async (path) => {
+            try {
+              const result = await (getFileTool as { execute: (args: { path: string }) => Promise<{ output: string }> }).execute({ path });
+              if (result.output && !result.output.startsWith('Failed')) {
+                fileContents[path] = result.output;
+              }
+            } catch { /* file doesn't exist in this repo — skip */ }
+          });
+          await Promise.all(fetches);
+          log.info('GitHub manifest files fetched', { count: Object.keys(fileContents).length, files: Object.keys(fileContents) });
+        }
+      }
+
       this.projectIntelligence = await this.intelligenceAnalyzer.analyze(
         this.saasConfig.url,
         {
@@ -585,12 +637,20 @@ Respond with JSON:
           repoPath: this.saasConfig.localPath,
           appName: this.saasConfig.name,
           appDescription: this.saasConfig.description,
+          // LLM fallback: only called when static confidence is low (~150 tokens)
+          llmFn: (prompt: string) => this.llm.generate(prompt),
+          // Pre-fetched manifest files for backend detection (free, no LLM)
+          fileContents: Object.keys(fileContents).length > 0 ? fileContents : undefined,
         },
       );
+
+      const bp = this.projectIntelligence.backendProfile;
       log.info('Intelligence analysis complete', {
         domain: this.projectIntelligence.domain,
         riskLevel: this.projectIntelligence.riskLevel,
-        regulations: this.projectIntelligence.regulatoryContext,
+        projectType: bp.projectType,
+        language: bp.language,
+        framework: bp.framework,
         mandatoryChecks: this.projectIntelligence.mandatoryChecks.length,
       });
       this.emit('intelligence-complete', this.projectIntelligence);
@@ -606,24 +666,44 @@ Respond with JSON:
     }
 
     // ── Phase 1: LLM-powered analysis ────────────────────────────────────────
-    const analysis = await this.analyze();
-    log.info('Analysis complete', { suggestedTests: analysis.suggestedTests.length });
-    this.emit('analysis-complete', analysis);
+    // Wrapped in try-catch: LLM failures (rate limit, bad key) must NOT kill the session
+    try {
+      const analysis = await this.analyze();
+      log.info('Analysis complete', { suggestedTests: analysis.suggestedTests.length });
+      this.emit('analysis-complete', analysis);
+    } catch (err) {
+      log.warn('LLM analysis failed — skipping, specialists will still run', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     // ── Phase 2: Specialist agents ───────────────────────────────────────────────
     if (this.specialistManager) {
       log.info('Starting specialist agents');
 
-      // Detect mode: GitHub repo vs SaaS web-app
-      const isGithubMode = this.saasConfig.url.startsWith('https://github.com/') ||
-                           this.saasConfig.url.startsWith('http://github.com/');
+      // Mode already detected above (isGithubMode)
 
-      // Choose specialist types based on mode
+      // Choose specialist types based on mode + backend profile
       let specialistTypes: AgentType[];
-      if (isGithubMode) {
-        // GitHub-only specialists — no browser tools needed
+      const bp = this.projectIntelligence?.backendProfile;
+      const isBackendProject = bp && (bp.projectType === 'backend-only' || bp.projectType === 'fullstack');
+
+      if (isGithubMode && isBackendProject) {
+        // Backend repo detected → backend specialists (HTTP testing + code audit) + repo analysts
+        log.info('GitHub mode + backend project detected', {
+          language: bp!.language, framework: bp!.framework, projectType: bp!.projectType,
+        });
+        specialistTypes = [
+          'backend-api-tester',
+          'backend-security-auditor',
+          'backend-code-auditor',
+          'backend-dependency-scanner',
+          'github-issue-analyzer',  // always useful for repo health
+        ];
+      } else if (isGithubMode) {
+        // GitHub repo but unknown/frontend/library → standard GitHub specialists
         specialistTypes = ['github-code-reviewer', 'github-security-auditor', 'github-issue-analyzer'];
-        log.info('GitHub mode detected — using GitHub specialists', { url: this.saasConfig.url });
+        log.info('GitHub mode (non-backend) — using GitHub specialists', { url: this.saasConfig.url });
       } else if (this.projectIntelligence) {
         // Intelligence-guided SaaS specialists (max 4 to keep TPM in budget)
         specialistTypes = (this.projectIntelligence.suggestedSpecialists as AgentType[]).slice(0, 4);
@@ -693,85 +773,116 @@ Respond with JSON:
         } catch { /* non-critical */ }
       });
 
-      // Run sequentially with smart rate-limit handling between specialists
-      (async () => {
-        for (const { id, type } of agentIds) {
-          try {
-            await this.specialistManager!.runSpecialist(id, this.saasConfig.url);
-          } catch (err) {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            log.error('Specialist failed', { type, error: errMsg });
+      // ── Concurrent specialist runner with a pool of max 2 at once ────────────
+      // gpt-4o-mini (specialists) has 200k TPM — we can safely run 2 in parallel.
+      // GitHub mode uses 1 at a time (API rate limits are per-IP, not per-model).
+      const CONCURRENCY = isGithubMode ? 1 : 2;
 
-            // If rate-limited, pause longer before the next specialist
-            if (errMsg.includes('rate_limit_exceeded') || errMsg.includes('429')) {
-              log.warn('Rate limit hit — pausing 60s before next specialist');
-              await new Promise(resolve => setTimeout(resolve, 60_000));
-              continue;
+      const runSpecialistSuite = async () => {
+        const queue = [...agentIds];
+        const running = new Set<Promise<void>>();
+
+        const startNext = (): Promise<void> | undefined => {
+          const item = queue.shift();
+          if (!item) return undefined;
+
+          const { id, type } = item;
+          const p: Promise<void> = (async () => {
+            try {
+              await this.specialistManager!.runSpecialist(id, this.saasConfig.url);
+            } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              log.error('Specialist failed', { type, error: errMsg });
+              if (errMsg.includes('rate_limit_exceeded') || errMsg.includes('429')) {
+                log.warn('Rate limit hit — pausing 30s before next slot opens');
+                await new Promise(r => setTimeout(r, 30_000));
+              }
             }
-          }
-          // Wait between specialists to stay within TPM limits.
-          // gpt-4 free tier = 10k TPM → ~30s cooldown keeps us under budget.
-          await new Promise(resolve => setTimeout(resolve, 30_000));
+          })().finally(() => {
+            running.delete(p);
+            // Fill the freed slot immediately
+            const next = startNext();
+            if (next) running.add(next);
+          });
+
+          return p;
+        };
+
+        // Fill up to CONCURRENCY slots immediately
+        for (let i = 0; i < Math.min(CONCURRENCY, queue.length + 1); i++) {
+          const p = startNext();
+          if (p) running.add(p);
         }
-      })().catch(err => log.error('Specialist suite failed', { error: err instanceof Error ? err.message : String(err) }));
+
+        // Wait until every specialist has finished
+        while (running.size > 0) {
+          await Promise.race(running);
+        }
+      };
 
       log.info('Specialist agents queued', { count: agentIds.length, mode: isGithubMode ? 'github' : 'saas' });
-    }
 
-    for (let i = 0; i < maxIterations; i++) {
-      log.info('Iteration', { iteration: i + 1, maxIterations });
+      if (isGithubMode) {
+        // ── GitHub mode: ONLY run the GitHub specialist suite ──────────────────
+        // The think() loop is useless here — the LLM cannot browse a GitHub URL.
+        // Awaiting the suite directly also surfaces errors properly.
+        log.info('GitHub mode — awaiting specialist suite (no think loop)');
+        await runSpecialistSuite().catch(err =>
+          log.error('Specialist suite failed', { error: err instanceof Error ? err.message : String(err) })
+        );
+      } else {
+        // ── SaaS mode: run specialists concurrently with think() loop ──────────
+        runSpecialistSuite().catch(err =>
+          log.error('Specialist suite failed', { error: err instanceof Error ? err.message : String(err) })
+        );
 
-      const thought = await this.think(i, maxIterations);
-      log.info('Decision', { decision: thought.decision, actionCount: thought.actions.length });
-      this.emit('thinking', thought);
+        for (let i = 0; i < maxIterations; i++) {
+          log.info('Iteration', { iteration: i + 1, maxIterations });
 
-      for (const action of thought.actions) {
-        log.info('Action', { type: action.type, target: action.target, reason: action.reason });
-
-        try {
-          switch (action.type) {
-            case 'generate_test':
-              const testType = this.inferTestType(action.target);
-              await this.generateTest(testType, action.target, action.reason);
-              break;
-
-            case 'create_agent':
-              await this.createDynamicAgent(action.target);
-              break;
-
-            case 'run_test':
-              if (this.generatedTests.has(action.target)) {
-                await this.executeTest(action.target);
-              }
-              break;
-
-            case 'analyze':
-              break;
-          }
-        } catch (e: unknown) {
-          log.error('Action failed', { type: action.type, error: e instanceof Error ? e.message : String(e) });
-        }
-      }
-
-      if (thought.actions.length === 0) {
-        log.warn('No actions returned by LLM', { iteration: i + 1, testsGenerated: this.generatedTests.size, agentsCreated: this.dynamicAgents.size });
-        
-        // If we're early in the process and have no actions, something is wrong
-        if (i < 3 && this.generatedTests.size < 5) {
-          log.error('Early termination detected - forcing test generation');
-          // Force at least one test generation
+          let thought: { decision: string; actions: Array<{ type: string; target: string; reason: string }> };
           try {
-            await this.generateTest('functional', 'Core user flow test', 'Forced generation due to empty actions');
+            thought = await this.think(i, maxIterations);
           } catch (e: unknown) {
-            log.error('Forced test generation failed', { error: e instanceof Error ? e.message : String(e) });
+            log.warn('think() failed — skipping iteration', { error: e instanceof Error ? e.message : String(e) });
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            continue;
           }
-        } else {
-          log.info('No more actions needed - testing appears complete');
-          break;
+          log.info('Decision', { decision: thought.decision, actionCount: thought.actions.length });
+          this.emit('thinking', thought);
+
+          for (const action of thought.actions) {
+            log.info('Action', { type: action.type, target: action.target, reason: action.reason });
+            try {
+              switch (action.type) {
+                case 'generate_test': {
+                  const testType = this.inferTestType(action.target);
+                  await this.generateTest(testType, action.target, action.reason);
+                  break;
+                }
+                case 'create_agent':
+                  await this.createDynamicAgent(action.target);
+                  break;
+                case 'run_test':
+                  if (this.generatedTests.has(action.target)) {
+                    await this.executeTest(action.target);
+                  }
+                  break;
+                case 'analyze':
+                  break;
+              }
+            } catch (e: unknown) {
+              log.error('Action failed', { type: action.type, error: e instanceof Error ? e.message : String(e) });
+            }
+          }
+
+          if (thought.actions.length === 0) {
+            log.info('No actions returned — testing appears complete', { iteration: i + 1 });
+            break;
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
-
-      await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
     log.info('Autonomous session complete');

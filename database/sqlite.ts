@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'fs';
 import { dirname } from 'path';
-import type { TestSession, Action, Bug, KanbanTicket, User, CoverageEntry } from './index.js';
+import type { TestSession, Action, Bug, KanbanTicket, User, CoverageEntry, ProposedFinding, Schedule, Project, SessionBaseline } from './index.js';
 
 export class OpenQASQLiteDatabase {
   private db: Database.Database;
@@ -103,6 +103,73 @@ export class OpenQASQLiteDatabase {
       CREATE INDEX IF NOT EXISTS idx_coverage_session   ON coverage(session_id);
       CREATE INDEX IF NOT EXISTS idx_coverage_path      ON coverage(path);
       CREATE INDEX IF NOT EXISTS idx_sessions_started   ON test_sessions(started_at DESC);
+
+      CREATE TABLE IF NOT EXISTS proposed_findings (
+        id              TEXT PRIMARY KEY,
+        session_id      TEXT NOT NULL,
+        title           TEXT NOT NULL,
+        description     TEXT NOT NULL,
+        severity        TEXT NOT NULL DEFAULT 'medium',
+        category        TEXT NOT NULL DEFAULT 'general',
+        confidence      INTEGER NOT NULL DEFAULT 50,
+        confidence_reasons TEXT,
+        evidence        TEXT,
+        url             TEXT,
+        specialist_type TEXT,
+        status          TEXT NOT NULL DEFAULT 'pending',
+        reviewer_note   TEXT,
+        created_at      TEXT NOT NULL,
+        reviewed_at     TEXT,
+        FOREIGN KEY (session_id) REFERENCES test_sessions(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS finding_fingerprints (
+        fingerprint     TEXT PRIMARY KEY,
+        title           TEXT NOT NULL,
+        first_seen_at   TEXT NOT NULL,
+        last_seen_at    TEXT NOT NULL,
+        occurrence_count INTEGER NOT NULL DEFAULT 1,
+        finding_id      TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS schedules (
+        id              TEXT PRIMARY KEY,
+        name            TEXT NOT NULL,
+        cron_expression TEXT NOT NULL,
+        target_url      TEXT NOT NULL,
+        enabled         INTEGER NOT NULL DEFAULT 1,
+        last_run_at     TEXT,
+        next_run_at     TEXT,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS projects (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        description TEXT,
+        url         TEXT,
+        github_owner TEXT,
+        github_repo  TEXT,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS session_baselines (
+        id              TEXT PRIMARY KEY,
+        session_id      TEXT NOT NULL,
+        previous_session_id TEXT,
+        new_bugs        INTEGER NOT NULL DEFAULT 0,
+        fixed_bugs      INTEGER NOT NULL DEFAULT 0,
+        regression_titles TEXT,
+        improvement_titles TEXT,
+        created_at      TEXT NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES test_sessions(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_proposed_session  ON proposed_findings(session_id);
+      CREATE INDEX IF NOT EXISTS idx_proposed_status   ON proposed_findings(status);
+      CREATE INDEX IF NOT EXISTS idx_schedules_enabled ON schedules(enabled);
     `);
   }
 
@@ -534,7 +601,210 @@ export class OpenQASQLiteDatabase {
     }));
   }
 
+  async getSessionBugs(sessionId: string): Promise<Bug[]> {
+    return this.db.prepare(
+      'SELECT * FROM bugs WHERE session_id = ? ORDER BY created_at DESC'
+    ).all(sessionId) as Bug[];
+  }
+
   async close(): Promise<void> {
     this.db.close();
+  }
+
+  // ── Proposed Findings ─────────────────────────────────────────────────────────
+
+  createProposedFinding(data: {
+    session_id: string;
+    title: string;
+    description: string;
+    severity: 'low' | 'medium' | 'high' | 'critical';
+    category: string;
+    confidence: number;
+    confidence_reasons: string[];
+    evidence?: string;
+    url?: string;
+    specialist_type?: string;
+  }): ProposedFinding {
+    const now = new Date().toISOString();
+    const finding: ProposedFinding = {
+      id: crypto.randomUUID(),
+      session_id: data.session_id,
+      title: data.title,
+      description: data.description,
+      severity: data.severity,
+      category: data.category,
+      confidence: data.confidence,
+      confidence_reasons: JSON.stringify(data.confidence_reasons),
+      evidence: data.evidence,
+      url: data.url,
+      specialist_type: data.specialist_type,
+      status: 'pending',
+      created_at: now,
+    };
+    this.db.prepare(`
+      INSERT INTO proposed_findings
+        (id, session_id, title, description, severity, category, confidence,
+         confidence_reasons, evidence, url, specialist_type, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      finding.id, finding.session_id, finding.title, finding.description,
+      finding.severity, finding.category, finding.confidence,
+      finding.confidence_reasons,
+      finding.evidence ?? null, finding.url ?? null, finding.specialist_type ?? null,
+      finding.status, finding.created_at,
+    );
+    return finding;
+  }
+
+  getProposedFindings(status?: 'pending' | 'approved' | 'rejected'): ProposedFinding[] {
+    if (status) {
+      return this.db.prepare(
+        'SELECT * FROM proposed_findings WHERE status = ? ORDER BY created_at DESC'
+      ).all(status) as ProposedFinding[];
+    }
+    return this.db.prepare(
+      'SELECT * FROM proposed_findings ORDER BY created_at DESC'
+    ).all() as ProposedFinding[];
+  }
+
+  getProposedFinding(id: string): ProposedFinding | null {
+    return (this.db.prepare(
+      'SELECT * FROM proposed_findings WHERE id = ?'
+    ).get(id) as ProposedFinding) ?? null;
+  }
+
+  reviewProposedFinding(id: string, status: 'approved' | 'rejected', note?: string): void {
+    this.db.prepare(`
+      UPDATE proposed_findings
+      SET status = ?, reviewer_note = ?, reviewed_at = ?
+      WHERE id = ?
+    `).run(status, note ?? null, new Date().toISOString(), id);
+  }
+
+  // ── Fingerprints (dedup) ──────────────────────────────────────────────────────
+
+  hasFingerprint(fingerprint: string): boolean {
+    const row = this.db.prepare(
+      'SELECT 1 FROM finding_fingerprints WHERE fingerprint = ?'
+    ).get(fingerprint);
+    return row !== undefined;
+  }
+
+  addFingerprint(fingerprint: string, title: string, findingId?: string): void {
+    const now = new Date().toISOString();
+    const existing = this.db.prepare(
+      'SELECT * FROM finding_fingerprints WHERE fingerprint = ?'
+    ).get(fingerprint);
+    if (existing) {
+      this.db.prepare(`
+        UPDATE finding_fingerprints
+        SET occurrence_count = occurrence_count + 1, last_seen_at = ?
+        WHERE fingerprint = ?
+      `).run(now, fingerprint);
+    } else {
+      this.db.prepare(`
+        INSERT INTO finding_fingerprints (fingerprint, title, first_seen_at, last_seen_at, occurrence_count, finding_id)
+        VALUES (?, ?, ?, ?, 1, ?)
+      `).run(fingerprint, title, now, now, findingId ?? null);
+    }
+  }
+
+  // ── Schedules ─────────────────────────────────────────────────────────────────
+
+  createSchedule(data: { name: string; cron_expression: string; target_url: string; enabled?: number }): Schedule {
+    const now = new Date().toISOString();
+    const schedule: Schedule = {
+      id: crypto.randomUUID(),
+      name: data.name,
+      cron_expression: data.cron_expression,
+      target_url: data.target_url,
+      enabled: 1,
+      created_at: now,
+      updated_at: now,
+    };
+    this.db.prepare(`
+      INSERT INTO schedules (id, name, cron_expression, target_url, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      schedule.id, schedule.name, schedule.cron_expression,
+      schedule.target_url, schedule.enabled, schedule.created_at, schedule.updated_at,
+    );
+    return schedule;
+  }
+
+  getSchedules(): Schedule[] {
+    return this.db.prepare('SELECT * FROM schedules ORDER BY created_at DESC').all() as Schedule[];
+  }
+
+  updateSchedule(id: string, updates: Partial<Schedule>): void {
+    const patch = { ...updates, updated_at: new Date().toISOString() };
+    const fields = Object.keys(patch).map(k => `"${k}" = ?`).join(', ');
+    const values = [...Object.values(patch), id];
+    this.db.prepare(`UPDATE schedules SET ${fields} WHERE id = ?`).run(...values);
+  }
+
+  deleteSchedule(id: string): void {
+    this.db.prepare('DELETE FROM schedules WHERE id = ?').run(id);
+  }
+
+  // ── Projects ──────────────────────────────────────────────────────────────────
+
+  createProject(data: { name: string; description?: string; url?: string; github_owner?: string; github_repo?: string }): Project {
+    const now = new Date().toISOString();
+    const project: Project = {
+      id: crypto.randomUUID(),
+      name: data.name,
+      description: data.description,
+      url: data.url,
+      github_owner: data.github_owner,
+      github_repo: data.github_repo,
+      created_at: now,
+      updated_at: now,
+    };
+    this.db.prepare(
+      'INSERT INTO projects (id, name, description, url, github_owner, github_repo, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(project.id, project.name, project.description ?? null, project.url ?? null, project.github_owner ?? null, project.github_repo ?? null, now, now);
+    return project;
+  }
+
+  getProjects(): Project[] {
+    return this.db.prepare('SELECT * FROM projects ORDER BY created_at DESC').all() as Project[];
+  }
+
+  deleteProject(id: string): void {
+    this.db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  }
+
+  // ── Baselines ─────────────────────────────────────────────────────────────────
+
+  createBaseline(data: {
+    session_id: string;
+    previous_session_id?: string;
+    new_bugs: number;
+    fixed_bugs: number;
+    regression_titles: string[];
+    improvement_titles: string[];
+  }): void {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO session_baselines
+        (id, session_id, previous_session_id, new_bugs, fixed_bugs, regression_titles, improvement_titles, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      crypto.randomUUID(),
+      data.session_id,
+      data.previous_session_id ?? null,
+      data.new_bugs,
+      data.fixed_bugs,
+      JSON.stringify(data.regression_titles),
+      JSON.stringify(data.improvement_titles),
+      now,
+    );
+  }
+
+  getBaseline(session_id: string): SessionBaseline | null {
+    return (this.db.prepare(
+      'SELECT * FROM session_baselines WHERE session_id = ? ORDER BY created_at DESC LIMIT 1'
+    ).get(session_id) as SessionBaseline) ?? null;
   }
 }

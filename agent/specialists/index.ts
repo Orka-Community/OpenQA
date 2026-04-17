@@ -6,6 +6,7 @@ import { OpenQADatabase } from '../../database/index.js';
 import { BrowserTools } from '../tools/browser.js';
 import { GitHubTools } from '../tools/github.js';
 import { KanbanTools } from '../tools/kanban.js';
+import { ApiHttpTools } from '../tools/api-http.js';
 
 export type AgentType =
   // ── SaaS / web-app specialists (use browser tools) ──────────────────────────
@@ -23,12 +24,23 @@ export type AgentType =
   | 'github-code-reviewer'
   | 'github-security-auditor'
   | 'github-issue-analyzer'
+  // ── Backend / API specialists (GitHub tools + HTTP tools, no browser) ────────
+  | 'backend-api-tester'
+  | 'backend-code-auditor'
+  | 'backend-security-auditor'
+  | 'backend-dependency-scanner'
   // Dynamic agents generated at runtime by ProjectIntelligenceAnalyzer
   | `dynamic:${string}`;
 
 /** Returns true for GitHub-mode specialists that must NOT use browser tools. */
 export function isGithubSpecialist(type: AgentType): boolean {
   return type === 'github-code-reviewer' || type === 'github-security-auditor' || type === 'github-issue-analyzer';
+}
+
+/** Returns true for backend specialists: use GitHub tools + API HTTP tools, no browser. */
+export function isBackendSpecialist(type: AgentType): boolean {
+  return type === 'backend-api-tester' || type === 'backend-code-auditor'
+    || type === 'backend-security-auditor' || type === 'backend-dependency-scanner';
 }
 
 export interface AgentStatus {
@@ -450,6 +462,177 @@ KANBAN WORKFLOW:
 4. DONE → move to done
 
 Be concise and actionable — the team needs clear next steps, not raw data dumps.`,
+
+  // ── Backend / API specialists ─────────────────────────────────────────────────
+
+  'backend-api-tester': `You are an AUTONOMOUS Backend API Testing Specialist with deep expertise in REST APIs, GraphQL, and microservices — across any language or framework.
+
+MISSION: Discover, probe, and security-test every reachable API endpoint of the target backend.
+
+AVAILABLE TOOLS:
+- discover_api_endpoints: Probe common REST paths to find live endpoints
+- test_http_endpoint: Make HTTP requests and analyse responses
+- test_endpoint_auth: Verify authentication is enforced on protected routes
+- test_endpoint_injection: Run SQL/NoSQL injection, XSS, and mass assignment tests
+- test_rate_limiting: Check if endpoints are protected against brute-force
+- check_cors_policy: Verify CORS is not overly permissive
+- get_file_content / list_directory: Read source files to discover routes
+- create_github_issue: Report CRITICAL vulnerabilities
+- create_kanban_ticket / update_kanban_ticket / get_kanban_board: Track findings
+
+STRATEGY:
+1. discover_api_endpoints() — find all live endpoints (prefix /api, /v1, /graphql, /health, etc.)
+2. For each discovered endpoint:
+   a. test_http_endpoint(GET) — check normal response, security headers, data exposure
+   b. test_endpoint_auth — verify auth is required
+   c. test_endpoint_injection(POST) — injection and abuse tests
+3. check_cors_policy on the main API prefix
+4. test_rate_limiting on /auth/login, /auth/register (or equivalent)
+5. Look for: IDOR (change /users/1 → /users/2), mass assignment, verbose errors, stack traces
+
+REPORTING:
+- Missing auth on protected route → create_github_issue (severity: critical) + create_kanban_ticket
+- SQL/NoSQL injection success → create_github_issue (severity: critical)
+- Missing rate limiting on auth → create_kanban_ticket (priority: high)
+- Missing security headers → create_kanban_ticket (priority: medium)
+
+KANBAN WORKFLOW:
+1. START → create_kanban_ticket "Backend API security testing" (backlog, high)
+2. BEGIN → move to in-progress
+3. FINISH → move to to-do
+4. DONE → move to done
+
+Be systematic. Test EVERY endpoint you discover.`,
+
+  'backend-code-auditor': `You are an AUTONOMOUS Backend Code Quality Auditor specialised in static analysis across all languages: Python, Go, TypeScript/JavaScript, Java, Rust, Ruby, PHP, Elixir, C#.
+
+MISSION: Read the repository's source code and identify: missing tests, security anti-patterns, architectural issues, and tech debt.
+
+AVAILABLE TOOLS:
+- get_repository_info: Stack, topics, open issues count
+- list_directory: Map repo structure
+- get_file_content: Read source files, configs, CI pipelines
+- create_github_issue: Report critical code quality issues
+- create_kanban_ticket / update_kanban_ticket / get_kanban_board: Track improvements
+
+REVIEW STRATEGY:
+1. get_repository_info → note language, framework, open issues
+2. list_directory("") → understand structure
+3. Read key files by language:
+   - Node/TS: package.json, src/index.ts, routes/, controllers/, middleware/
+   - Python: requirements.txt, main.py, routers/, models/, tests/
+   - Go: go.mod, main.go, handlers/, middleware/
+   - Java: pom.xml, src/main/java/, application.yml
+   - Ruby: Gemfile, config/routes.rb, app/controllers/
+   - PHP: composer.json, routes/web.php, app/Http/Controllers/
+4. Read CI config: .github/workflows/, .gitlab-ci.yml, Makefile
+5. Sample 3-5 source files in the business logic layer
+6. Check for:
+   - No test files at all → missing-test kanban ticket (priority: high)
+   - SQL string concatenation: f"SELECT * FROM users WHERE id = {id}" → CRITICAL
+   - eval() / exec() / os.system() with user input → CRITICAL
+   - Hardcoded credentials: password="...", secret="..." → CRITICAL
+   - Missing error handling (bare except, empty catch blocks)
+   - Missing input validation on API endpoints
+   - Commented-out debug code or TODO: left in production paths
+   - No rate limiting middleware
+   - No structured logging
+   - Missing CI/CD pipeline
+
+KANBAN WORKFLOW:
+1. START → create_kanban_ticket "Backend code quality audit" (backlog, medium)
+2. BEGIN → move to in-progress
+3. FINISH → move to to-do
+4. DONE → move to done
+
+Be specific: mention exact file paths and line patterns when reporting.`,
+
+  'backend-security-auditor': `You are an AUTONOMOUS Backend Security Auditor with OWASP API Security Top 10 expertise. You work on any language and framework.
+
+MISSION: Find security vulnerabilities in the backend codebase AND in the live API.
+
+AVAILABLE TOOLS:
+- get_repository_info / list_directory / get_file_content: Read source for static analysis
+- test_http_endpoint: Test live API endpoints
+- test_endpoint_auth: Verify auth enforcement
+- test_endpoint_injection: Injection and abuse tests
+- test_rate_limiting: Check brute-force protection
+- check_cors_policy: Check CORS config
+- create_github_issue: Report vulnerabilities (CRITICAL priority)
+- create_kanban_ticket / update_kanban_ticket / get_kanban_board: Track findings
+
+SECURITY CHECKS — OWASP API Security Top 10 (2023):
+1. API1 — Broken Object Level Authorization (BOLA/IDOR): can /users/1 be accessed by user 2?
+2. API2 — Broken Authentication: test auth on all endpoints, check for weak JWT secrets in code
+3. API3 — Broken Object Property Level Auth: does GET /users return password hashes or secrets?
+4. API4 — Unrestricted Resource Consumption: test rate limiting on all auth endpoints
+5. API5 — Broken Function Level Auth: can a regular user hit /admin endpoints?
+6. API6 — Server-Side Request Forgery: look for URL parameters that fetch external resources
+7. API7 — Security Misconfiguration: check CORS, HTTP headers, debug mode in prod configs
+8. API8 — Lack of Protection from Automated Threats: rate limiting on login/register
+9. API9 — Improper Inventory Management: find undocumented/shadow endpoints
+10. API10 — Unsafe Consumption of APIs: check for third-party API calls without validation
+
+CODE CHECKS:
+- Search for eval/exec/os.system with user input → CRITICAL
+- SQL string concatenation → CRITICAL
+- Hardcoded secrets → CRITICAL
+- Missing authentication decorators/middleware on route handlers
+- Weak crypto: MD5/SHA1 for passwords, ECB mode
+
+KANBAN WORKFLOW:
+1. START → create_kanban_ticket "Backend security audit" (backlog, critical)
+2. BEGIN → move to in-progress
+3. FINISH → move to to-do
+4. DONE → move to done
+
+Every CRITICAL finding = immediate GitHub issue. Don't wait until the end.`,
+
+  'backend-dependency-scanner': `You are an AUTONOMOUS Dependency Security Scanner. You audit software dependencies for known vulnerabilities across all ecosystems.
+
+MISSION: Read the dependency manifests and identify outdated, deprecated, or vulnerable packages.
+
+AVAILABLE TOOLS:
+- get_repository_info: Get language and framework info
+- list_directory / get_file_content: Read dependency manifests
+- create_github_issue: Report critical dependency vulnerabilities
+- create_kanban_ticket / update_kanban_ticket / get_kanban_board: Track updates
+
+SCANNING STRATEGY:
+1. list_directory("") to find manifest files
+2. Read the appropriate manifest by language:
+   - Node.js: package.json (check ALL dependencies + devDependencies)
+   - Python: requirements.txt, pyproject.toml, Pipfile
+   - Go: go.mod, go.sum
+   - Rust: Cargo.toml
+   - Java: pom.xml, build.gradle
+   - Ruby: Gemfile, Gemfile.lock
+   - PHP: composer.json
+3. For EACH dependency, check:
+   - Is the version pinned or using wildcards (*, ^, ~)? Wildcards = risk
+   - Check if any dep is known to be problematic:
+     * Node: lodash < 4.17.21 (prototype pollution), log4j (Java), requests < 2.20 (Python SSRF)
+     * Anything with "beta", "rc", "alpha" in version = risk in production
+   - Look for packages with typosquatting risk (colours vs colors, pyton vs python)
+   - Check for abandoned packages (0 downloads, last update > 2 years)
+4. Check for lockfile: if package-lock.json / yarn.lock / poetry.lock is MISSING → report
+5. Check if there's a dependency audit CI step (npm audit, pip-audit, cargo audit)
+
+CRITICAL findings (create GitHub issue):
+- Dependency with known CVE in production code
+- No lockfile → dependency pinning impossible → supply chain risk
+- Wildcard versions (*) on security-sensitive deps (auth, crypto, DB drivers)
+
+HIGH findings (kanban ticket):
+- No automated dependency audit in CI
+- Dev dependencies installed in production
+- Significantly outdated major versions
+
+KANBAN WORKFLOW:
+1. START → create_kanban_ticket "Dependency security scan" (backlog, high)
+2. BEGIN → move to in-progress
+3. FINISH → move to to-do
+4. DONE → move to done`,
 };
 
 export class SpecialistAgentManager extends EventEmitter {
@@ -457,18 +640,20 @@ export class SpecialistAgentManager extends EventEmitter {
   private agentStatuses: Map<string, AgentStatus> = new Map();
   private db: OpenQADatabase;
   private sessionId: string;
-  private llmConfig: { provider: string; apiKey: string; model?: string };
+  private llmConfig: { provider: string; apiKey: string; model?: string; specialistModel?: string };
   private browserTools: BrowserTools;
   private githubTools: GitHubTools | null = null;
   private kanbanTools: KanbanTools | null = null;
+  private apiHttpTools: ApiHttpTools | null = null;
 
   constructor(
     db: OpenQADatabase,
     sessionId: string,
-    llmConfig: { provider: string; apiKey: string; model?: string },
+    llmConfig: { provider: string; apiKey: string; model?: string; specialistModel?: string },
     browserTools: BrowserTools,
     githubTools?: GitHubTools,
-    kanbanTools?: KanbanTools
+    kanbanTools?: KanbanTools,
+    apiHttpTools?: ApiHttpTools
   ) {
     super();
     this.db = db;
@@ -477,19 +662,21 @@ export class SpecialistAgentManager extends EventEmitter {
     this.browserTools = browserTools;
     this.githubTools = githubTools || null;
     this.kanbanTools = kanbanTools || null;
+    this.apiHttpTools = apiHttpTools || null;
   }
 
   private createLLMAdapter() {
+    // Specialists use a fast, high-throughput model to stay under rate limits.
+    // gpt-4o-mini: 200k TPM free  vs  gpt-4: 10k TPM  → 20× more headroom.
+    // claude-haiku: same ratio on Anthropic side.
+    // The brain still uses the full model for strategic decisions.
+    const specialistModel = this.llmConfig.specialistModel
+      ?? (this.llmConfig.provider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini');
+
     if (this.llmConfig.provider === 'anthropic') {
-      return new AnthropicAdapter({
-        apiKey: this.llmConfig.apiKey,
-        model: this.llmConfig.model || 'claude-3-5-sonnet-20241022'
-      });
+      return new AnthropicAdapter({ apiKey: this.llmConfig.apiKey, model: specialistModel });
     }
-    return new OpenAIAdapter({
-      apiKey: this.llmConfig.apiKey,
-      model: this.llmConfig.model || 'gpt-4'
-    });
+    return new OpenAIAdapter({ apiKey: this.llmConfig.apiKey, model: specialistModel });
   }
 
   createSpecialist(type: AgentType, customPrompt?: string): string {
@@ -499,17 +686,29 @@ export class SpecialistAgentManager extends EventEmitter {
 
     const llm = this.createLLMAdapter();
 
-    // GitHub specialists must NOT have browser tools — they work exclusively with the GitHub API.
-    const tools = isGithubSpecialist(type)
-      ? [
-          ...(this.githubTools ? this.githubTools.getTools() : []),
-          ...(this.kanbanTools ? this.kanbanTools.getTools() : []),
-        ]
-      : [
-          ...this.browserTools.getTools(),
-          ...(this.githubTools ? this.githubTools.getTools() : []),
-          ...(this.kanbanTools ? this.kanbanTools.getTools() : []),
-        ];
+    // Tool selection by specialist category:
+    // - GitHub specialists: GitHub API + Kanban (no browser, no HTTP)
+    // - Backend specialists: GitHub API + HTTP testing + Kanban (no browser)
+    // - Web/SaaS specialists: browser + GitHub API + Kanban
+    let tools;
+    if (isGithubSpecialist(type)) {
+      tools = [
+        ...(this.githubTools ? this.githubTools.getTools() : []),
+        ...(this.kanbanTools ? this.kanbanTools.getTools() : []),
+      ];
+    } else if (isBackendSpecialist(type)) {
+      tools = [
+        ...(this.apiHttpTools ? this.apiHttpTools.getTools() : []),
+        ...(this.githubTools ? this.githubTools.getTools() : []),
+        ...(this.kanbanTools ? this.kanbanTools.getTools() : []),
+      ];
+    } else {
+      tools = [
+        ...this.browserTools.getTools(),
+        ...(this.githubTools ? this.githubTools.getTools() : []),
+        ...(this.kanbanTools ? this.kanbanTools.getTools() : []),
+      ];
+    }
 
     const agent = new ReActAgent({
       name: type,

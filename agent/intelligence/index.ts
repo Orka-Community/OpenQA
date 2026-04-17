@@ -19,6 +19,28 @@ import type { AgentType } from '../specialists/index.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export type ProjectType =
+  | 'backend-only'    // pure API / microservice, no frontend assets
+  | 'frontend-only'   // React/Vue/Angular SPA with no server code
+  | 'fullstack'       // both frontend and backend in the same repo
+  | 'library'         // npm / pip / cargo package, no HTTP server
+  | 'cli'             // command-line tool
+  | 'mobile'          // React Native, Flutter
+  | 'unknown';
+
+export interface BackendProfile {
+  projectType: ProjectType;
+  language: string;           // 'python' | 'go' | 'typescript' | 'javascript' | 'java' | 'rust' | 'ruby' | 'php' | 'elixir' | 'csharp' | 'unknown'
+  framework: string;          // 'express' | 'fastapi' | 'django' | 'flask' | 'gin' | 'echo' | 'spring' | 'rails' | 'laravel' | 'actix' | 'axum' | 'phoenix' | 'aspnet' | 'nestjs' | 'hapi' | 'unknown'
+  hasSwaggerDocs: boolean;
+  hasOpenApiSpec: boolean;
+  hasTestSuite: boolean;      // test files detected
+  testCommand?: string;       // e.g. "npm test", "pytest", "go test ./..."
+  startCommand?: string;      // e.g. "npm start", "uvicorn main:app"
+  detectedEndpoints: string[]; // e.g. ['/api/users', '/health'] from source code
+  confidence: 'high' | 'medium' | 'low';
+}
+
 export type DomainType =
   | 'fintech'          // payments, banking, trading, insurance
   | 'healthcare'       // medical, telemedicine, patient data
@@ -80,6 +102,7 @@ export interface ProjectIntelligence {
   kanbanSuggestions: KanbanSuggestion[];
   techStackSignals: string[];      // detected tech signals before LLM
   reasoning: string;               // the analyst's full explanation
+  backendProfile: BackendProfile;  // detected language/framework/project type
 }
 
 // ── Heuristic signal detection ─────────────────────────────────────────────────
@@ -156,6 +179,264 @@ function detectStaticSignals(url: string, repoPath?: string): StaticSignals {
     hasAdmin:      kw.includes('admin') || kw.includes('dashboard') || kw.includes('management'),
     hasAPI:        kw.includes('api') || kw.includes('developer') || kw.includes('sdk'),
     hasUserData:   kw.includes('auth') || kw.includes('pay') || kw.includes('health'),
+  };
+}
+
+// ── Backend project detection ──────────────────────────────────────────────────
+//
+// Analyses file names and contents passed from GitHub API or local filesystem.
+// Language-agnostic: detects Python, Go, Rust, Java, Ruby, PHP, Elixir, C#, JS/TS.
+// Returns a BackendProfile that the brain uses to choose backend specialists.
+
+const UNKNOWN_BACKEND: BackendProfile = {
+  projectType: 'unknown',
+  language: 'unknown',
+  framework: 'unknown',
+  hasSwaggerDocs: false,
+  hasOpenApiSpec: false,
+  hasTestSuite: false,
+  detectedEndpoints: [],
+  confidence: 'low',
+};
+
+export function detectBackendFromFiles(
+  files: Record<string, string>  // { 'package.json': '...', 'go.mod': '...' }
+): BackendProfile {
+  const paths = Object.keys(files);
+  const pathSet = new Set(paths.map(p => p.toLowerCase()));
+
+  let language = 'unknown';
+  let framework = 'unknown';
+  let projectType: ProjectType = 'unknown';
+  let confidence: BackendProfile['confidence'] = 'low';
+  let testCommand: string | undefined;
+  let startCommand: string | undefined;
+  let hasSwaggerDocs = false;
+  let hasOpenApiSpec = false;
+  let hasTestSuite = false;
+  const detectedEndpoints: string[] = [];
+
+  // ── Swagger / OpenAPI ──────────────────────────────────────────────────────
+  if (pathSet.has('swagger.json') || pathSet.has('openapi.json') || pathSet.has('openapi.yaml') || pathSet.has('swagger.yaml')) {
+    hasOpenApiSpec = true;
+    hasSwaggerDocs = true;
+  }
+
+  // ── Test files ─────────────────────────────────────────────────────────────
+  const testFilePatterns = ['.test.ts', '.test.js', '.spec.ts', '.spec.js', '_test.go', '_test.py', 'test_', 'spec/', '__tests__/', 'tests/'];
+  hasTestSuite = paths.some(p => testFilePatterns.some(pat => p.includes(pat)));
+
+  // ── Language detection ─────────────────────────────────────────────────────
+
+  // Node.js / TypeScript / JavaScript
+  if (pathSet.has('package.json')) {
+    const pkg = (() => { try { return JSON.parse(files['package.json'] || '{}'); } catch { return {}; } })();
+    const allDeps: Record<string, string> = { ...pkg.dependencies, ...pkg.devDependencies };
+    const depNames = Object.keys(allDeps);
+    const scripts: Record<string, string> = pkg.scripts || {};
+
+    language = depNames.some(d => d === 'typescript' || d === 'ts-node' || d.endsWith('/ts-node'))
+      ? 'typescript' : 'javascript';
+
+    // Detect Node.js framework
+    if (depNames.includes('express'))          { framework = 'express'; }
+    else if (depNames.includes('fastify'))     { framework = 'fastify'; }
+    else if (depNames.includes('@nestjs/core')) { framework = 'nestjs'; }
+    else if (depNames.includes('koa'))         { framework = 'koa'; }
+    else if (depNames.includes('hapi') || depNames.includes('@hapi/hapi')) { framework = 'hapi'; }
+    else if (depNames.includes('next'))        { framework = 'nextjs'; }
+    else if (depNames.includes('nuxt'))        { framework = 'nuxt'; }
+
+    // Detect scripts
+    testCommand = scripts.test || scripts['test:unit'] || scripts['test:integration'];
+    startCommand = scripts.start || scripts.dev || scripts['start:dev'];
+
+    // Swagger in Node
+    if (depNames.some(d => d.includes('swagger') || d.includes('openapi'))) hasSwaggerDocs = true;
+
+    // Determine project type
+    const hasFrontendDeps = depNames.some(d => ['react', 'vue', 'angular', '@angular/core', 'svelte'].includes(d));
+    const hasBackendFramework = ['express', 'fastify', 'nestjs', 'koa', 'hapi'].includes(framework);
+    if (hasBackendFramework && !hasFrontendDeps) projectType = 'backend-only';
+    else if (hasBackendFramework && hasFrontendDeps) projectType = 'fullstack';
+    else if (!hasBackendFramework && hasFrontendDeps) projectType = 'frontend-only';
+    else if (pkg.main && !pkg.scripts?.start) projectType = 'library';
+
+    confidence = 'high';
+  }
+
+  // Python
+  else if (pathSet.has('requirements.txt') || pathSet.has('pyproject.toml') || pathSet.has('setup.py') || pathSet.has('pipfile')) {
+    language = 'python';
+    const reqs = (files['requirements.txt'] || files['pyproject.toml'] || '').toLowerCase();
+
+    if (reqs.includes('fastapi'))     { framework = 'fastapi'; startCommand = 'uvicorn main:app --reload'; }
+    else if (reqs.includes('django')) { framework = 'django'; startCommand = 'python manage.py runserver'; }
+    else if (reqs.includes('flask'))  { framework = 'flask'; startCommand = 'flask run'; }
+    else if (reqs.includes('aiohttp')){ framework = 'aiohttp'; }
+    else if (reqs.includes('starlette')) { framework = 'starlette'; }
+    else if (reqs.includes('tornado'))   { framework = 'tornado'; }
+    else if (reqs.includes('sanic'))     { framework = 'sanic'; }
+
+    if (reqs.includes('pytest') || pathSet.has('pytest.ini') || pathSet.has('conftest.py')) {
+      hasTestSuite = true; testCommand = 'pytest';
+    }
+    if (reqs.includes('fastapi') || reqs.includes('flasgger') || reqs.includes('apispec')) hasSwaggerDocs = true;
+
+    projectType = ['fastapi', 'django', 'flask', 'aiohttp', 'starlette', 'tornado', 'sanic'].includes(framework)
+      ? 'backend-only' : 'unknown';
+    confidence = 'high';
+  }
+
+  // Go
+  else if (pathSet.has('go.mod')) {
+    language = 'go';
+    const gomod = (files['go.mod'] || '').toLowerCase();
+
+    if (gomod.includes('gin-gonic/gin'))    { framework = 'gin'; }
+    else if (gomod.includes('echo'))        { framework = 'echo'; }
+    else if (gomod.includes('fiber'))       { framework = 'fiber'; }
+    else if (gomod.includes('chi'))         { framework = 'chi'; }
+    else if (gomod.includes('gorilla/mux')) { framework = 'gorilla-mux'; }
+    else if (gomod.includes('net/http'))    { framework = 'net/http'; }
+
+    testCommand = 'go test ./...';
+    hasTestSuite = paths.some(p => p.endsWith('_test.go'));
+    if (gomod.includes('swag') || gomod.includes('swagger')) hasSwaggerDocs = true;
+
+    projectType = 'backend-only';
+    confidence = 'high';
+  }
+
+  // Rust
+  else if (pathSet.has('cargo.toml')) {
+    language = 'rust';
+    const cargo = (files['cargo.toml'] || '').toLowerCase();
+
+    if (cargo.includes('actix-web')) { framework = 'actix'; }
+    else if (cargo.includes('axum')) { framework = 'axum'; }
+    else if (cargo.includes('rocket')){ framework = 'rocket'; }
+    else if (cargo.includes('warp'))  { framework = 'warp'; }
+
+    testCommand = 'cargo test';
+    hasTestSuite = paths.some(p => p.includes('#[cfg(test)]') || p.endsWith('_test.rs'));
+    projectType = 'backend-only';
+    confidence = 'high';
+  }
+
+  // Java / Kotlin
+  else if (pathSet.has('pom.xml') || pathSet.has('build.gradle') || pathSet.has('build.gradle.kts')) {
+    language = pathSet.has('build.gradle.kts') ? 'kotlin' : 'java';
+    const buildFile = (files['pom.xml'] || files['build.gradle'] || files['build.gradle.kts'] || '').toLowerCase();
+
+    if (buildFile.includes('spring-boot') || buildFile.includes('spring-web')) { framework = 'spring'; }
+    else if (buildFile.includes('quarkus')) { framework = 'quarkus'; }
+    else if (buildFile.includes('micronaut')){ framework = 'micronaut'; }
+    else if (buildFile.includes('vert.x'))   { framework = 'vertx'; }
+
+    testCommand = pathSet.has('pom.xml') ? 'mvn test' : './gradlew test';
+    hasTestSuite = paths.some(p => p.includes('src/test/'));
+    if (buildFile.includes('springdoc') || buildFile.includes('swagger')) hasSwaggerDocs = true;
+    projectType = 'backend-only';
+    confidence = 'high';
+  }
+
+  // Ruby
+  else if (pathSet.has('gemfile') || pathSet.has('Gemfile')) {
+    language = 'ruby';
+    const gemfile = (files['gemfile'] || files['Gemfile'] || '').toLowerCase();
+
+    if (gemfile.includes("'rails'") || gemfile.includes('"rails"'))   { framework = 'rails'; startCommand = 'rails server'; }
+    else if (gemfile.includes('sinatra')) { framework = 'sinatra'; }
+    else if (gemfile.includes('hanami'))  { framework = 'hanami'; }
+    else if (gemfile.includes('grape'))   { framework = 'grape'; }
+
+    testCommand = gemfile.includes('rspec') ? 'bundle exec rspec' : 'bundle exec rake test';
+    hasTestSuite = paths.some(p => p.includes('spec/') || p.includes('test/'));
+    projectType = 'backend-only';
+    confidence = 'high';
+  }
+
+  // PHP
+  else if (pathSet.has('composer.json')) {
+    language = 'php';
+    const composer = (files['composer.json'] || '').toLowerCase();
+
+    if (composer.includes('laravel/framework')) { framework = 'laravel'; startCommand = 'php artisan serve'; }
+    else if (composer.includes('symfony'))      { framework = 'symfony'; }
+    else if (composer.includes('slim'))         { framework = 'slim'; }
+    else if (composer.includes('lumen'))        { framework = 'lumen'; }
+
+    testCommand = 'vendor/bin/phpunit';
+    hasTestSuite = paths.some(p => p.includes('tests/') || p.endsWith('Test.php'));
+    if (composer.includes('l5-swagger') || composer.includes('swagger')) hasSwaggerDocs = true;
+    projectType = 'backend-only';
+    confidence = 'high';
+  }
+
+  // Elixir
+  else if (pathSet.has('mix.exs')) {
+    language = 'elixir';
+    const mix = (files['mix.exs'] || '').toLowerCase();
+
+    if (mix.includes('phoenix')) { framework = 'phoenix'; startCommand = 'mix phx.server'; }
+    testCommand = 'mix test';
+    hasTestSuite = paths.some(p => p.includes('test/'));
+    projectType = 'backend-only';
+    confidence = 'high';
+  }
+
+  // C# / .NET
+  else if (paths.some(p => p.endsWith('.csproj') || p.endsWith('.sln'))) {
+    language = 'csharp';
+    const csproj = Object.entries(files).find(([k]) => k.endsWith('.csproj'))?.[1] || '';
+    if (csproj.toLowerCase().includes('microsoft.aspnetcore') || csproj.toLowerCase().includes('asp.net')) {
+      framework = 'aspnet';
+    }
+    testCommand = 'dotnet test';
+    hasTestSuite = paths.some(p => p.toLowerCase().includes('test') && p.endsWith('.cs'));
+    projectType = 'backend-only';
+    confidence = 'high';
+  }
+
+  // ── Extract route endpoints from source code ───────────────────────────────
+  for (const [, content] of Object.entries(files)) {
+    if (!content || content.length > 50_000) continue;
+    // Express / Node routes
+    const expressRoutes = content.matchAll(/(?:router|app)\.\w+\(\s*['"`](\/[^'"`\s]{1,80})/g);
+    for (const m of expressRoutes) detectedEndpoints.push(m[1]);
+
+    // Python routes (FastAPI, Flask, Django)
+    const pythonRoutes = content.matchAll(/@(?:app|router)\.(?:get|post|put|delete|patch)\(\s*['"`](\/[^'"`\s]{1,80})/g);
+    for (const m of pythonRoutes) detectedEndpoints.push(m[1]);
+
+    // Go routes (gin, echo, chi)
+    const goRoutes = content.matchAll(/\.(?:GET|POST|PUT|DELETE|PATCH)\(\s*"(\/[^"]{1,80})"/g);
+    for (const m of goRoutes) detectedEndpoints.push(m[1]);
+
+    // Spring MVC
+    const springRoutes = content.matchAll(/@(?:Get|Post|Put|Delete|Patch|Request)Mapping\(\s*(?:value\s*=\s*)?["'](\/[^"']{1,80})["']/g);
+    for (const m of springRoutes) detectedEndpoints.push(m[1]);
+
+    // Rails routes
+    const railsRoutes = content.matchAll(/(?:get|post|put|delete|patch)\s+['"`](\/[^'"`\s]{1,80})/g);
+    for (const m of railsRoutes) detectedEndpoints.push(m[1]);
+  }
+
+  // Deduplicate
+  const uniqueEndpoints = [...new Set(detectedEndpoints)].slice(0, 50);
+
+  return {
+    projectType,
+    language,
+    framework,
+    hasSwaggerDocs,
+    hasOpenApiSpec,
+    hasTestSuite,
+    testCommand,
+    startCommand,
+    detectedEndpoints: uniqueEndpoints,
+    confidence,
   };
 }
 
@@ -289,7 +570,25 @@ const DOMAIN_MANDATORY_CHECKS: Record<DomainType | 'default', MandatoryCheck[]> 
 
 // ── Specialist selection by domain/risk ───────────────────────────────────────
 
-function selectSpecialists(domain: DomainType, riskLevel: RiskLevel, signals: StaticSignals): AgentType[] {
+function selectSpecialists(domain: DomainType, riskLevel: RiskLevel, signals: StaticSignals, backendProfile?: BackendProfile): AgentType[] {
+  // ── Backend project → backend specialists, not browser ones ─────────────────
+  if (backendProfile && (backendProfile.projectType === 'backend-only' || backendProfile.projectType === 'fullstack')) {
+    const base: AgentType[] = ['backend-api-tester', 'backend-code-auditor'];
+
+    if (riskLevel === 'critical' || riskLevel === 'high' || signals.hasPayments || signals.hasAuth) {
+      base.push('backend-security-auditor');
+    }
+    base.push('backend-dependency-scanner');
+
+    // Fullstack: also run browser specialists for the frontend
+    if (backendProfile.projectType === 'fullstack') {
+      base.push('security-scanner', 'form-tester');
+    }
+
+    return [...new Set(base)] as AgentType[];
+  }
+
+  // ── Web app → browser specialists (original logic) ───────────────────────
   const base: AgentType[] = ['navigation-tester', 'form-tester', 'component-tester'];
 
   if (riskLevel === 'critical' || riskLevel === 'high') {
@@ -605,6 +904,57 @@ function buildKanbanSuggestions(
   return suggestions;
 }
 
+// ── LLM fallback classifier ────────────────────────────────────────────────────
+
+/**
+ * Called ONLY when static analysis confidence is low (domain stays 'unknown'
+ * and no signals were detected from the URL or repo).
+ * One small LLM call (~150 tokens in, ~80 out) to classify the app.
+ * Returns null on any failure so the caller can degrade gracefully.
+ */
+async function llmClassify(
+  url: string,
+  appName: string,
+  appDescription: string,
+  llmFn: (prompt: string) => Promise<string>,
+): Promise<Partial<StaticSignals> & { domain?: DomainType; riskLevel?: RiskLevel } | null> {
+  const prompt = `You are a web application classifier for a QA system. Analyse the following app and output ONLY a JSON object — no explanation, no markdown.
+
+URL: ${url}
+Name: ${appName || 'unknown'}
+Description: ${appDescription || 'none'}
+
+Output JSON with these exact keys:
+{
+  "domain": "<one of: fintech|healthcare|ecommerce|saas-b2b|saas-consumer|government|developer-tools|media|education|unknown>",
+  "riskLevel": "<one of: critical|high|medium|low>",
+  "hasAuth": <true|false>,
+  "hasPayments": <true|false>,
+  "hasHealthData": <true|false>,
+  "hasFileUpload": <true|false>,
+  "hasAdmin": <true|false>,
+  "hasAPI": <true|false>,
+  "hasUserData": <true|false>
+}`;
+
+  try {
+    const raw = await llmFn(prompt);
+    const match = raw.match(/\{[\s\S]*?\}/);
+    if (!match) return null;
+    return JSON.parse(match[0]);
+  } catch {
+    return null;
+  }
+}
+
+/** Returns true when static analysis has enough signal to trust its classification. */
+function isHighConfidence(domain: DomainType, signals: StaticSignals): boolean {
+  if (domain !== 'unknown') return true;                 // domain was identified
+  if (signals.keywords.length >= 2) return true;         // multiple URL signals
+  if (signals.hasPayments || signals.hasHealthData) return true; // strong domain signal
+  return false;
+}
+
 // ── Main analyzer class ────────────────────────────────────────────────────────
 
 export class ProjectIntelligenceAnalyzer {
@@ -612,6 +962,9 @@ export class ProjectIntelligenceAnalyzer {
    * Full intelligence analysis.
    * Call this BEFORE runAutonomously().
    * The result shapes the entire testing strategy.
+   *
+   * @param llmFn  Optional LLM function. Called ONLY when static confidence is
+   *               low (domain = unknown, no URL signals). One small call ~150 tokens.
    */
   async analyze(
     url: string,
@@ -620,24 +973,73 @@ export class ProjectIntelligenceAnalyzer {
       repoPath?: string;
       appName?: string;
       appDescription?: string;
+      llmFn?: (prompt: string) => Promise<string>;
+      /** Pre-fetched file contents from GitHub API or local FS (filename → content) */
+      fileContents?: Record<string, string>;
     } = {}
   ): Promise<ProjectIntelligence> {
-    const signals = detectStaticSignals(url, options.repoPath);
-    const { domain, riskLevel, regulations } = deriveRuleBasedContext(signals);
+    // ── Step 0: backend profile from file contents ────────────────────────────
+    const backendProfile: BackendProfile = options.fileContents && Object.keys(options.fileContents).length > 0
+      ? detectBackendFromFiles(options.fileContents)
+      : UNKNOWN_BACKEND;
 
+    // ── Step 1: static analysis (instant, free, always runs) ──────────────────
+    let signals = detectStaticSignals(url, options.repoPath);
+    let { domain, riskLevel, regulations } = deriveRuleBasedContext(signals);
+
+    // ── Step 2: LLM fallback ONLY if static confidence is low ─────────────────
+    if (!isHighConfidence(domain, signals) && options.llmFn) {
+      const llmResult = await llmClassify(
+        url,
+        options.appName || '',
+        options.appDescription || '',
+        options.llmFn,
+      );
+
+      if (llmResult) {
+        // Merge LLM signals into static signals (LLM enriches, never overrides hard evidence)
+        signals = {
+          ...signals,
+          hasAuth:       llmResult.hasAuth       ?? signals.hasAuth,
+          hasPayments:   llmResult.hasPayments   ?? signals.hasPayments,
+          hasHealthData: llmResult.hasHealthData ?? signals.hasHealthData,
+          hasFileUpload: llmResult.hasFileUpload ?? signals.hasFileUpload,
+          hasAdmin:      llmResult.hasAdmin      ?? signals.hasAdmin,
+          hasAPI:        llmResult.hasAPI        ?? signals.hasAPI,
+          hasUserData:   llmResult.hasUserData   ?? signals.hasUserData,
+        };
+
+        // If LLM identified a domain and static didn't → trust LLM
+        if (domain === 'unknown' && llmResult.domain && llmResult.domain !== 'unknown') {
+          domain = llmResult.domain;
+        }
+        // If LLM returned a higher risk than static → escalate
+        const riskOrder: RiskLevel[] = ['low', 'medium', 'high', 'critical'];
+        if (llmResult.riskLevel && riskOrder.indexOf(llmResult.riskLevel) > riskOrder.indexOf(riskLevel)) {
+          riskLevel = llmResult.riskLevel;
+        }
+
+        // Re-derive regulations now that domain/signals may have changed
+        ({ regulations } = deriveRuleBasedContext(signals));
+        if (domain !== 'unknown') {
+          // Ensure domain-specific regulations are applied
+          const fresh = deriveRuleBasedContext({ ...signals });
+          regulations = [...new Set([...regulations, ...fresh.regulations])];
+        }
+      }
+    }
+
+    // ── Step 3: build everything from the (possibly enriched) signals ──────────
     const mandatoryChecks = [
       ...(DOMAIN_MANDATORY_CHECKS[domain] || []),
       ...DOMAIN_MANDATORY_CHECKS.default,
     ];
 
-    const suggestedSpecialists = selectSpecialists(domain, riskLevel, signals);
+    const suggestedSpecialists = selectSpecialists(domain, riskLevel, signals, backendProfile);
     const dynamicAgentBlueprints = buildDynamicAgentBlueprints(domain, signals, url);
     const kanbanSuggestions = buildKanbanSuggestions(domain, riskLevel, signals, regulations);
-
     const testingStrategy = buildTestingStrategy(domain, riskLevel, signals);
-
     const criticalPaths = buildCriticalPaths(domain, signals, url);
-
     const reasoning = buildReasoning(domain, riskLevel, regulations, signals, mandatoryChecks);
 
     return {
@@ -652,6 +1054,7 @@ export class ProjectIntelligenceAnalyzer {
       kanbanSuggestions,
       techStackSignals: signals.keywords,
       reasoning,
+      backendProfile,
     };
   }
 }
