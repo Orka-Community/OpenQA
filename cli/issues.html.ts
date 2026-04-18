@@ -302,40 +302,46 @@ export function getIssuesHTML(): string {
 
     async function loadIssues() {
       try {
-        const [bugsRes, issuesRes] = await Promise.all([
+        const [bugsRes, approvalsRes] = await Promise.all([
           fetch('/api/bugs', { credentials: 'include' }),
-          fetch('/api/issues', { credentials: 'include' })
+          fetch('/api/approvals', { credentials: 'include' }),
         ]);
-        
-        const bugs = await bugsRes.json();
-        const apiIssues = await issuesRes.json();
-        
-        // Combine bugs and issues
-        issues = [
-          ...bugs.map(b => ({
-            id: b.id,
-            title: b.title || 'Bug detected',
-            description: b.description || b.details || 'No description',
-            severity: b.severity || 'medium',
-            status: b.status || 'open',
-            type: b.type || 'ui',
-            url: b.url,
-            created_at: b.created_at || b.timestamp,
-            session_id: b.session_id
-          })),
-          ...apiIssues.map(i => ({
-            id: i.id,
-            title: i.title || 'Issue detected',
-            description: i.description || i.details || 'No description',
-            severity: i.severity || 'medium',
-            status: i.status || 'open',
-            type: i.type || 'api',
-            url: i.url,
-            created_at: i.created_at || i.timestamp,
-            session_id: i.session_id
-          }))
-        ];
-        
+
+        const bugs       = await bugsRes.json().catch(() => []);
+        const approvals  = await approvalsRes.json().catch(() => []);
+
+        // Confirmed bugs (auto-approved, confidence >= 75)
+        const confirmedBugs = (Array.isArray(bugs) ? bugs : []).map(b => ({
+          id: b.id,
+          title: b.title || 'Bug detected',
+          description: b.description || b.details || 'No description',
+          severity: b.severity || 'medium',
+          status: b.status || 'open',
+          type: 'confirmed',
+          url: b.url || b.github_issue_url,
+          created_at: b.created_at,
+          session_id: b.session_id,
+          confidence: null,
+        }));
+
+        // Pending review findings (confidence 50-74)
+        const pendingFindings = (Array.isArray(approvals) ? approvals : [])
+          .filter(a => a.status === 'pending')
+          .map(a => ({
+            id: 'pending-' + a.id,
+            title: a.title,
+            description: a.description,
+            severity: a.severity || 'medium',
+            status: 'investigating',
+            type: 'pending-review',
+            url: null,
+            created_at: a.created_at,
+            session_id: a.session_id,
+            confidence: a.confidence,
+          }));
+
+        issues = [...confirmedBugs, ...pendingFindings];
+
         updateStats();
         renderIssues();
       } catch (error) {

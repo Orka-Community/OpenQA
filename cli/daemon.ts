@@ -17,6 +17,8 @@ import { getSessionsHTML } from './sessions.html.js';
 import { getIssuesHTML } from './issues.html.js';
 import { getTestsHTML } from './tests.html.js';
 import { getCoverageHTML } from './coverage.html.js';
+import { getApprovalsHTML } from './approvals.html.js';
+import { getSchedulesHTML } from './schedules.html.js';
 import { getLogsHTML } from './logs.html.js';
 import { getSessionDetailHTML } from './session-detail.html.js';
 import { logger } from '../agent/logger.js';
@@ -211,6 +213,14 @@ app.get('/coverage', authOrRedirect(db), (_req, res) => {
   res.send(getCoverageHTML());
 });
 
+app.get('/approvals', authOrRedirect(db), (_req, res) => {
+  res.send(getApprovalsHTML());
+});
+
+app.get('/schedules', authOrRedirect(db), (_req, res) => {
+  res.send(getSchedulesHTML());
+});
+
 app.get('/logs', authOrRedirect(db), (_req, res) => {
   res.send(getLogsHTML());
 });
@@ -241,9 +251,18 @@ app.post('/api/agent/start', async (_req, res) => {
       }
     }
 
+    // Allow GitLab-only mode: derive URL from configured project when no saas.url is set
+    if (!saasUrl) {
+      const gitlabProject = await config.get('gitlab.project');
+      const gitlabUrl     = await config.get('gitlab.url') || 'https://gitlab.com';
+      if (gitlabProject) {
+        saasUrl = `${gitlabUrl.replace(/\/$/, '')}/${gitlabProject}`;
+      }
+    }
+
     if (!saasUrl) {
       return res.status(400).json({
-        error: 'No target configured. Set a SaaS URL in /config, or configure GITHUB_OWNER + GITHUB_REPO to test a repository.',
+        error: 'No target configured. Set a SaaS URL in /config, or configure GitHub/GitLab credentials to test a repository.',
       });
     }
 

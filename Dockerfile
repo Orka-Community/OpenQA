@@ -3,7 +3,7 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY package*.json tsconfig*.json tsup.config.ts ./
 RUN npm ci
 
 COPY . .
@@ -14,17 +14,13 @@ FROM node:22-slim
 
 LABEL org.opencontainers.image.title="OpenQA" \
       org.opencontainers.image.description="Autonomous QA Testing Agent — powered by Orka" \
-      org.opencontainers.image.url="https://hub.docker.com/r/orklab/openqa" \
+      org.opencontainers.image.url="https://hub.docker.com/r/orkalab/openqa" \
       org.opencontainers.image.source="https://github.com/Orka-Community/OpenQA" \
       org.opencontainers.image.vendor="Orka Team"
 
 WORKDIR /app
 
-# 1. Update system packages
-RUN apt-get update && apt-get upgrade -y
-
-# 2. Install Playwright system dependencies and gosu
-RUN apt-get install -y \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     gosu \
     libnss3 \
     libnspr4 \
@@ -47,30 +43,31 @@ RUN apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. Production deps (includes the `playwright` npm package)
+# Production deps
 COPY package*.json ./
-RUN npm ci --production
+RUN npm ci --omit=dev
 
-# 4. Install Playwright browsers with all dependencies
+# Install Playwright's Chromium with all OS deps
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN npx playwright install --with-deps chromium
 
-# 5. Copy compiled app
+# Copy compiled app from builder
 COPY --from=builder /app/dist ./dist
 
-# 6. Create unprivileged user — do NOT set USER here; the entrypoint will
-#    fix volume permissions (needs root) then exec as openqa via gosu
-RUN groupadd -r openqa && useradd -r -g openqa openqa && \
-    chown -R openqa:openqa /app /ms-playwright
+# Unprivileged user — entrypoint will fix /data permissions then drop to this user
+RUN groupadd -r openqa && useradd -r -g openqa openqa \
+    && mkdir -p /app/data \
+    && chown -R openqa:openqa /app /ms-playwright
 
-# 7. Entrypoint script fixes /data volume permissions then drops to openqa
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
-# 8. Configurable port (default: 4242)
-ENV WEB_PORT=4242
-ENV WEB_HOST=0.0.0.0
-EXPOSE ${WEB_PORT}
+ENV NODE_ENV=production
+ENV OPENQA_PORT=4242
+ENV OPENQA_HOST=0.0.0.0
+EXPOSE 4242
+
+VOLUME /app/data
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["node", "dist/cli/daemon.js"]

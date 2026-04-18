@@ -1,5 +1,48 @@
 # @openqa/cli
 
+## 3.1.0
+
+### Minor Changes
+
+#### Approvals Queue — Human-in-the-Loop Review
+
+A new **Approvals** page (`/approvals`) is now available in the sidebar. Findings with a confidence score between 50 and 74 are queued for human review instead of being auto-discarded or auto-promoted. Reviewers can approve (→ promoted to Kanban + Issues) or reject (→ archived) each finding.
+
+- New route `GET /approvals` with dedicated UI
+- Filter by status: Pending / Approved / Rejected
+- Stats chips (pending count, approved count, rejected count)
+- Badge on the dashboard sidebar showing pending count
+- Approve/reject actions call existing `/api/approvals/:id/approve|reject` endpoints
+
+#### Coverage — Real Metrics & CSV Export
+
+The Coverage page no longer uses hardcoded denominators ("10 pages = 100%").
+
+- Rings now display **raw counts** (pages visited, actions taken, forms tested, API calls) scaled relative to the local maximum — so the display is always truthful
+- New **summary bar** shows absolute totals when data exists
+- **Export CSV** now works: generates and downloads a real `openqa-coverage-YYYY-MM-DD.csv` file (was previously an `alert()` placeholder)
+
+#### GitLab Mode — Full Parity with GitHub
+
+GitLab sessions now behave exactly like GitHub sessions:
+
+- Concurrency forced to 1 (API rate limits)
+- Specialist selection mirrors GitHub: `github-code-reviewer`, `github-security-auditor`, `github-issue-analyzer` — or the full backend suite when a backend project is detected
+- Dynamic agents disabled in GitLab mode (browser-based, not applicable to repos)
+- `saasUrl` fallback in `/api/agent/start`: if no `saas.url` configured, derives URL from `gitlab.project` + `gitlab.url`
+
+#### Bug Persistence — `create_kanban_ticket` now also creates bugs
+
+When a finding is auto-approved (confidence ≥ 75) with `priority: high` or `priority: critical`, `create_kanban_ticket` now also inserts a record into the `bugs` table. This ensures **high/critical findings always appear on the Issues page**, not just the Kanban board.
+
+### Patch Changes
+
+- Dashboard sidebar: "Tests" renamed to "Actions" (in sync with shared sidebar component)
+- Shared sidebar: "Approvals" entry added between Coverage and Logs
+- `README.md`: corrected env var names (`OPENQA_PORT`/`OPENQA_HOST` instead of `WEB_PORT`/`WEB_HOST`), added GitLab section, full UI page table, architecture diagram
+- `daemon.ts`: GitLab URL fallback added to `/api/agent/start` (derives `https://gitlab.com/<project>` when no `saas.url` set)
+- Test suite: 270 tests passing, no regressions
+
 ## 2.1.28
 
 ### Patch Changes

@@ -16,6 +16,7 @@ import { ProjectIntelligenceAnalyzer, type ProjectIntelligence } from '../intell
 import { SpecialistAgentManager, type AgentType, type AgentStatus } from '../specialists/index.js';
 import { BrowserTools } from '../tools/browser.js';
 import { GitHubTools } from '../tools/github.js';
+import { GitLabTools } from '../tools/gitlab.js';
 import { KanbanTools } from '../tools/kanban.js';
 import { ApiHttpTools } from '../tools/api-http.js';
 
@@ -73,6 +74,7 @@ export class OpenQABrain extends EventEmitter {
   private specialistManager: SpecialistAgentManager | null = null;
   private browserTools: BrowserTools | null = null;
   private githubTools: GitHubTools | null = null;
+  private gitlabTools: GitLabTools | null = null;
   private kanbanTools: KanbanTools | null = null;
   private apiHttpTools: ApiHttpTools | null = null;
   private intelligenceAnalyzer: ProjectIntelligenceAnalyzer;
@@ -116,10 +118,27 @@ export class OpenQABrain extends EventEmitter {
     this.proactiveKanban = new ProactiveKanbanManager(this.db);
 
     this.browserTools = new BrowserTools(this.db, this.sessionId);
-    this.githubTools = new GitHubTools(this.db, this.sessionId, githubConfig || {});
-    this.kanbanTools = new KanbanTools(this.db, this.sessionId);
-    // ApiHttpTools uses saasConfig.url as base — updated later if URL changes
+    this.githubTools  = new GitHubTools(this.db, this.sessionId, githubConfig || {});
+    this.kanbanTools  = new KanbanTools(this.db, this.sessionId);
     this.apiHttpTools = new ApiHttpTools(this.db, this.sessionId, saasConfig.url);
+
+    // GitLab mode: build GitLabTools when the target URL is a GitLab repo
+    const isGitLabUrl = saasConfig.url.startsWith('https://gitlab.com/')
+      || saasConfig.url.startsWith('http://gitlab.com/')
+      || saasConfig.url.includes('/gitlab/');
+    if (isGitLabUrl || saasConfig.gitlabToken) {
+      const urlObj      = new URL(saasConfig.url.startsWith('http') ? saasConfig.url : `https://${saasConfig.url}`);
+      const projectPath = urlObj.pathname.replace(/^\//, '').replace(/\.git$/, '');
+      this.gitlabTools  = new GitLabTools(this.db, this.sessionId, {
+        token:   saasConfig.gitlabToken,
+        project: projectPath,
+        url:     saasConfig.gitlabUrl || urlObj.origin,
+      });
+    }
+
+    // Specialists receive GitHub tools OR GitLab tools — whichever is active.
+    // GitLabTools exposes the same tool names as GitHubTools so prompts stay unchanged.
+    const repoTools = this.gitlabTools ?? this.githubTools;
 
     // Initialize specialist manager — pass specialistModel so they use a cheap/fast
     // model (gpt-4o-mini / claude-haiku) while the brain keeps the full model.
@@ -133,7 +152,7 @@ export class OpenQABrain extends EventEmitter {
         specialistModel: llmConfig.specialistModel,
       },
       this.browserTools,
-      this.githubTools,
+      repoTools,
       this.kanbanTools,
       this.apiHttpTools
     );
@@ -725,9 +744,9 @@ Respond with JSON:
       const bp = this.projectIntelligence?.backendProfile;
       const isBackendProject = bp && (bp.projectType === 'backend-only' || bp.projectType === 'fullstack');
 
-      if (isGithubMode && isBackendProject) {
+      if ((isGithubMode || isGitlabMode) && isBackendProject) {
         // Backend repo detected → backend specialists (HTTP testing + code audit) + repo analysts
-        log.info('GitHub mode + backend project detected', {
+        log.info(`${isGithubMode ? 'GitHub' : 'GitLab'} mode + backend project detected`, {
           language: bp!.language, framework: bp!.framework, projectType: bp!.projectType,
         });
         specialistTypes = [
@@ -737,10 +756,10 @@ Respond with JSON:
           'backend-dependency-scanner',
           'github-issue-analyzer',  // always useful for repo health
         ];
-      } else if (isGithubMode) {
-        // GitHub repo but unknown/frontend/library → standard GitHub specialists
+      } else if (isGithubMode || isGitlabMode) {
+        // GitHub/GitLab repo but unknown/frontend/library → standard repo specialists
         specialistTypes = ['github-code-reviewer', 'github-security-auditor', 'github-issue-analyzer'];
-        log.info('GitHub mode (non-backend) — using GitHub specialists', { url: this.saasConfig.url });
+        log.info(`${isGithubMode ? 'GitHub' : 'GitLab'} mode (non-backend) — using repo specialists`, { url: this.saasConfig.url });
       } else if (this.projectIntelligence) {
         // Intelligence-guided SaaS specialists (max 4 to keep TPM in budget)
         specialistTypes = (this.projectIntelligence.suggestedSpecialists as AgentType[]).slice(0, 4);
@@ -757,7 +776,7 @@ Respond with JSON:
       });
 
       // Add dynamic agents from intelligence blueprints (max 2 extra, only in SaaS mode)
-      if (!isGithubMode && this.projectIntelligence?.dynamicAgentBlueprints.length) {
+      if (!isGithubMode && !isGitlabMode && this.projectIntelligence?.dynamicAgentBlueprints.length) {
         for (const blueprint of this.projectIntelligence.dynamicAgentBlueprints.slice(0, 2)) {
           const id = this.specialistManager!.createDynamicSpecialist(blueprint);
           log.info('Created dynamic agent from blueprint', { name: blueprint.name, id });
@@ -813,7 +832,7 @@ Respond with JSON:
       // ── Concurrent specialist runner with a pool of max 2 at once ────────────
       // gpt-4o-mini (specialists) has 200k TPM — we can safely run 2 in parallel.
       // GitHub mode uses 1 at a time (API rate limits are per-IP, not per-model).
-      const CONCURRENCY = isGithubMode ? 1 : 2;
+      const CONCURRENCY = (isGithubMode || isGitlabMode) ? 1 : 2;
 
       const runSpecialistSuite = async () => {
         const queue = [...agentIds];
@@ -857,13 +876,13 @@ Respond with JSON:
         }
       };
 
-      log.info('Specialist agents queued', { count: agentIds.length, mode: isGithubMode ? 'github' : 'saas' });
+      log.info('Specialist agents queued', { count: agentIds.length, mode: isGithubMode ? 'github' : isGitlabMode ? 'gitlab' : 'saas' });
 
-      if (isGithubMode) {
-        // ── GitHub mode: ONLY run the GitHub specialist suite ──────────────────
-        // The think() loop is useless here — the LLM cannot browse a GitHub URL.
+      if (isGithubMode || isGitlabMode) {
+        // ── Repository mode (GitHub / GitLab): run specialists serially ─────────
+        // The think() loop is useless here — the LLM cannot browse a repo URL.
         // Awaiting the suite directly also surfaces errors properly.
-        log.info('GitHub mode — awaiting specialist suite (no think loop)');
+        log.info(`${isGithubMode ? 'GitHub' : 'GitLab'} mode — awaiting specialist suite (no think loop)`);
         await runSpecialistSuite().catch(err =>
           log.error('Specialist suite failed', { error: err instanceof Error ? err.message : String(err) })
         );

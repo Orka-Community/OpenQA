@@ -30,11 +30,20 @@ const KNOWN_VULN_CLASSES = [
   'open redirect', 'ssrf', 'xxe', 'rce', 'remote code execution',
   'privilege escalation', 'idor', 'broken access control',
   'sensitive data exposure', 'hardcoded secret', 'api key exposed',
+  // Code quality / dependency findings
+  'missing authentication', 'unvalidated input', 'insecure dependency',
+  'outdated dependency', 'missing rate limit', 'missing test',
+  'no test coverage', 'missing error handling', 'prototype pollution',
+  'command injection', 'path injection', 'dependency vulnerability',
+  'cve-', 'missing ci', 'secret exposed', 'token exposed',
+  'weak password', 'missing validation', 'stale issue', 'regression risk',
 ];
 
 const SECURITY_SPECIALISTS = [
   'security-scanner', 'sql-injection', 'xss-tester', 'auth-tester',
-  'api-tester', 'github-security-auditor',
+  'api-tester', 'github-security-auditor', 'github-code-reviewer',
+  'github-issue-analyzer', 'backend-api-tester', 'backend-security-auditor',
+  'backend-code-auditor', 'backend-dependency-scanner',
 ];
 
 export class ConfidenceScorer {

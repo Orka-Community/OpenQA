@@ -107,6 +107,20 @@ export class KanbanTools {
               screenshot_url: screenshot_path
             });
 
+            // Also persist to bugs table for high/critical findings so Issues page is populated
+            if (priority === 'high' || priority === 'critical') {
+              try {
+                await this.db.createBug({
+                  session_id: this.sessionId,
+                  title,
+                  description,
+                  severity: priority as 'high' | 'critical',
+                  status: 'open',
+                  screenshot_path,
+                });
+              } catch (_) { /* non-fatal — kanban ticket already created */ }
+            }
+
             await this.db.createAction({
               session_id: this.sessionId,
               type: 'kanban_ticket',

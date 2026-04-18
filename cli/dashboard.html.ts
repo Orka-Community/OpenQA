@@ -850,12 +850,18 @@ export function getDashboardHTML(): string {
       <a class="nav-item" href="/tests">
         <span class="icon">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bug-play-icon lucide-bug-play"><path d="M10 19.655A6 6 0 0 1 6 14v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 3.97"/><path d="M14 15.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997a1 1 0 0 1-1.517-.86z"/><path d="M14.12 3.88 16 2"/><path d="M21 5a4 4 0 0 1-3.55 3.97"/><path d="M3 21a4 4 0 0 1 3.81-4"/><path d="M3 5a4 4 0 0 0 3.55 3.97"/><path d="M6 13H2"/><path d="m8 2 1.88 1.88"/><path d="M9 7.13V6a3 3 0 1 1 6 0v1.13"/></svg>
-        </span> Tests
+        </span> Actions
       </a>
       <a class="nav-item" href="/coverage">
         <span class="icon">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>
         </span> Coverage
+      </a>
+      <a class="nav-item" href="/approvals">
+        <span class="icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </span> Approvals
+        <span class="badge" id="approvals-count" style="background:var(--amber);display:none">0</span>
       </a>
       <a class="nav-item" href="/logs">
         <span class="icon">
@@ -1978,6 +1984,18 @@ export function getDashboardHTML(): string {
         ? kanbanTickets.filter(t => t.column !== 'done').length
         : bugs.filter(b => b.status === 'open' || b.status === 'in-progress').length;
       document.getElementById('kanban-count').textContent = String(openTickets);
+
+      // Approvals badge = pending findings needing human review
+      try {
+        const approvalsRes = await fetch('/api/approvals?status=pending', creds);
+        const pending = await approvalsRes.json();
+        const count = Array.isArray(pending) ? pending.length : 0;
+        const badgeEl = document.getElementById('approvals-count');
+        if (badgeEl) {
+          badgeEl.textContent = String(count);
+          badgeEl.style.display = count > 0 ? 'inline-flex' : 'none';
+        }
+      } catch (_) { /* non-critical */ }
 
       // Seed activity feed with recent actions from latest session
       if (sessions.length > 0) {

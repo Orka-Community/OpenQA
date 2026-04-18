@@ -63,11 +63,42 @@ Specialists are **selected by the intelligence layer**, not hard-coded:
 | **Regression** | Bug-fix verification |
 | **Performance** | Load times, resource usage |
 
-### 🔗 Git Integration
+### 🔗 GitHub & GitLab Integration
 
-- **GitHub / GitLab** — auto-detect merges on main
-- **CI/CD Listener** — trigger tests after successful deployments
-- **Auto Issues** — creates GitHub issues for critical bugs found
+OpenQA can audit any **GitHub or GitLab repository** without a running web app:
+
+- **Code review** — scans source files for security anti-patterns, missing tests, SQL concatenation, hardcoded secrets
+- **Security audit** — checks .env files, CI pipelines, auth code, CORS config
+- **Issue analysis** — identifies stale issues, recurring bug patterns, overloaded PRs
+- **Dependency scan** — flags known vulnerable packages (backend projects)
+- **Auto Issues** — creates GitHub issues for critical findings
+- **GitLab support** — works with gitlab.com and self-hosted GitLab instances
+
+### 🔍 Human-in-the-Loop Approvals
+
+Every finding gets a **confidence score (0–100)**:
+
+| Score | Action |
+|-------|--------|
+| ≥ 75 | Auto-approved — bug recorded immediately, persisted to DB |
+| 50–74 | Queued to `/approvals` for human review |
+| < 50 | Discarded |
+
+The Approvals page lets reviewers approve or reject mid-confidence findings with one click. High/critical auto-approved findings are also automatically persisted as bug records for long-term tracking.
+
+### 🕐 Scheduled QA Sessions
+
+OpenQA includes a built-in **cron scheduler** — set recurring sessions without any external tooling:
+
+```bash
+# Accessible at http://localhost:4242/schedules
+# Examples:
+0 2 * * *       # Nightly at 2 AM
+0 9 * * 1-5     # Weekdays at 9 AM
+*/30 * * * *    # Every 30 minutes
+```
+
+The daemon checks every 60 seconds. Create, enable/disable, and delete schedules from the web UI or directly via the `/api/schedules` REST API.
 
 ### 📤 Export & Reports
 
@@ -89,7 +120,7 @@ docker pull orkalab/openqa:latest
 
 # Run with your API key
 docker run -d \
-  -p 4242:3000 \
+  -p 4242:4242 \
   -e LLM_PROVIDER=openai \
   -e OPENAI_API_KEY=sk-xxx \
   -e OPENQA_JWT_SECRET=$(openssl rand -hex 32) \
@@ -134,7 +165,7 @@ curl -fsSL https://openqa.orkajs.com/install-production.sh | bash
 
 ```bash
 # Configure your application
-curl -X POST http://localhost:3000/api/saas-config/quick \
+curl -X POST http://localhost:4242/api/saas-config/quick \
   -H "Content-Type: application/json" \
   -d '{
     "name": "My SaaS App",
@@ -143,7 +174,7 @@ curl -X POST http://localhost:3000/api/saas-config/quick \
   }'
 
 # Start autonomous testing
-curl -X POST http://localhost:3000/api/brain/run
+curl -X POST http://localhost:4242/api/brain/run
 ```
 
 **That's it!** OpenQA will:
@@ -176,9 +207,19 @@ openqa start --daemon # background
 
 ### Access Web Interfaces
 
-- **Dashboard**: http://localhost:4242 — Real-time monitoring
-- **Kanban**: http://localhost:4242/kanban — Strategic QA board
-- **Config**: http://localhost:4242/config — Settings
+| Page | URL | Description |
+|---|---|---|
+| Dashboard | http://localhost:4242 | Live metrics, agents, activity |
+| Kanban | http://localhost:4242/kanban | Auto-generated QA tickets |
+| Sessions | http://localhost:4242/sessions | Session history |
+| Issues | http://localhost:4242/issues | Confirmed bugs |
+| Actions | http://localhost:4242/tests | Agent actions per session |
+| Coverage | http://localhost:4242/coverage | Pages and endpoints tested (raw counts) |
+| Approvals | http://localhost:4242/approvals | Mid-confidence findings for human review |
+| Schedules | http://localhost:4242/schedules | Cron-based autonomous QA schedules |
+| Logs | http://localhost:4242/logs | Full agent log stream |
+| Config | http://localhost:4242/config | Target and auth settings |
+| Environment | http://localhost:4242/config/env | LLM and server settings |
 
 ### 🔐 Dashboard Authentication
 
@@ -270,8 +311,8 @@ AGENT_MAX_ITERATIONS=20          # Max actions per session
 AGENT_AUTO_START=true            # Start testing automatically
 
 # Web UI
-WEB_PORT=3000
-WEB_HOST=0.0.0.0
+OPENQA_PORT=4242
+OPENQA_HOST=0.0.0.0
 
 # Database
 DB_PATH=./data/openqa.db
@@ -389,7 +430,7 @@ Each ticket has category tags (`security`, `compliance`, `performance`, `improve
 ### Full Configuration
 
 ```bash
-curl -X POST http://localhost:3000/api/saas-config \
+curl -X POST http://localhost:4242/api/saas-config \
   -H "Content-Type: application/json" \
   -d '{
     "name": "My E-commerce App",
@@ -411,7 +452,7 @@ curl -X POST http://localhost:3000/api/saas-config \
 ### Add Directives On-the-fly
 
 ```bash
-curl -X POST http://localhost:3000/api/saas-config/directive \
+curl -X POST http://localhost:4242/api/saas-config/directive \
   -H "Content-Type: application/json" \
   -d '{"directive": "Pay special attention to the new refund feature"}'
 ```
@@ -420,13 +461,13 @@ curl -X POST http://localhost:3000/api/saas-config/directive \
 
 ```bash
 # List current directives
-curl http://localhost:3000/api/saas-config
+curl http://localhost:4242/api/saas-config
 
 # Remove directive at index 0
-curl -X DELETE http://localhost:3000/api/saas-config/directive/0
+curl -X DELETE http://localhost:4242/api/saas-config/directive/0
 
 # Replace all directives
-curl -X PUT http://localhost:3000/api/saas-config/directives \
+curl -X PUT http://localhost:4242/api/saas-config/directives \
   -H "Content-Type: application/json" \
   -d '{"directives": ["Check login", "Verify inbox", "Test compose"]}'
 ```
@@ -435,7 +476,7 @@ curl -X PUT http://localhost:3000/api/saas-config/directives \
 
 ```bash
 # The Brain will clone and analyse your code
-curl -X POST http://localhost:3000/api/saas-config/repository \
+curl -X POST http://localhost:4242/api/saas-config/repository \
   -H "Content-Type: application/json" \
   -d '{"url": "https://github.com/myorg/my-app"}'
 ```
@@ -444,7 +485,7 @@ curl -X POST http://localhost:3000/api/saas-config/repository \
 
 ```bash
 # Generate a security test
-curl -X POST http://localhost:3000/api/brain/generate-test \
+curl -X POST http://localhost:4242/api/brain/generate-test \
   -H "Content-Type: application/json" \
   -d '{
     "type": "security",
@@ -456,7 +497,7 @@ curl -X POST http://localhost:3000/api/brain/generate-test \
 ### Analyse Before Running
 
 ```bash
-curl -X POST http://localhost:3000/api/brain/analyze
+curl -X POST http://localhost:4242/api/brain/analyze
 # Returns: understanding, suggestedTests, suggestedAgents, risks
 ```
 
@@ -464,13 +505,13 @@ curl -X POST http://localhost:3000/api/brain/analyze
 
 ```bash
 # JSON export
-curl "http://localhost:3000/api/export/SESSION_ID?format=json" > report.json
+curl "http://localhost:4242/api/export/SESSION_ID?format=json" > report.json
 
 # CSV export
-curl "http://localhost:3000/api/export/SESSION_ID?format=csv" > report.csv
+curl "http://localhost:4242/api/export/SESSION_ID?format=csv" > report.csv
 
 # HTML report
-curl "http://localhost:3000/api/export/SESSION_ID?format=html" > report.html
+curl "http://localhost:4242/api/export/SESSION_ID?format=html" > report.html
 ```
 
 ---
@@ -555,7 +596,7 @@ openqa/
 │   │   ├── llm-cache.ts         LLM response cache (TTL + LRU)
 │   │   └── llm-resilience.ts    Retry, fallback, circuit-breaker
 │   ├── specialists/     # 🤖 Pre-coded + dynamic specialist agents
-│   ├── tools/           # Browser, GitHub, Kanban tools
+│   ├── tools/           # Browser, GitHub, GitLab, Kanban tools
 │   ├── config/          # SaaS configuration (ConfigManager, SaaSConfigManager)
 │   ├── export/          # 📤 JSON, CSV, HTML export
 │   └── webhooks/        # Git listener (GitHub/GitLab)
@@ -619,6 +660,22 @@ openqa/
 | `PATCH` | `/api/kanban/tickets/:id` | Partial update (e.g. move column) |
 | `DELETE` | `/api/kanban/:id` | Delete ticket |
 
+### Approvals
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/approvals` | List findings (`?status=pending\|approved\|rejected`) |
+| `PUT` | `/api/approvals/:id` | Approve or reject a finding |
+
+### Schedules
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/schedules` | List all schedules |
+| `POST` | `/api/schedules` | Create a schedule |
+| `PUT` | `/api/schedules/:id` | Update / enable / disable |
+| `DELETE` | `/api/schedules/:id` | Delete a schedule |
+
 ### Connection Testing
 
 | Method | Path | Description |
@@ -627,7 +684,7 @@ openqa/
 | `POST` | `/api/test-github` | Test GitHub credentials |
 | `POST` | `/api/test-llm` | Test LLM provider |
 
-### WebSocket Events (`ws://localhost:3000`)
+### WebSocket Events (`ws://localhost:4242`)
 
 | Event | Description |
 |-------|-------------|
