@@ -124,6 +124,17 @@ export class OpenQAAgentV2 extends EventEmitter {
       });
     }
 
+    // Enrich saasConfig with GitLab credentials if configured
+    const gitlabToken   = await this.config.get('gitlab.token');
+    const gitlabProject = await this.config.get('gitlab.project');
+    const gitlabUrl     = await this.config.get('gitlab.url');
+    const enrichedSaasConfig = {
+      ...saasConfig,
+      ...(gitlabToken   && { gitlabToken }),
+      ...(gitlabProject && { gitlabProject }),
+      ...(gitlabUrl     && { gitlabUrl }),
+    };
+
     this.brain = new OpenQABrain(
       this.db,
       {
@@ -131,7 +142,7 @@ export class OpenQAAgentV2 extends EventEmitter {
         apiKey: cfg.llm.apiKey || process.env.OPENAI_API_KEY || '',
         model: cfg.llm.model
       },
-      saasConfig,
+      enrichedSaasConfig,
       this.sessionId,
       cfg.github  // Pass GitHub config
     );

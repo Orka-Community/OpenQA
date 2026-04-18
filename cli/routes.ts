@@ -348,6 +348,58 @@ export function createApiRouter(db: OpenQADatabase, config: ConfigManager): Rout
     }
   });
 
+  // Test GitLab connection
+  router.post('/api/test-gitlab', async (_req, res) => {
+    try {
+      const gitlabToken   = await config.get('gitlab.token');
+      const gitlabProject = await config.get('gitlab.project');
+      const gitlabUrl     = await config.get('gitlab.url') || 'https://gitlab.com';
+
+      if (!gitlabProject) {
+        return res.json({ success: false, message: 'GitLab project path must be set (e.g. myorg/myrepo)' });
+      }
+
+      const encoded = encodeURIComponent(gitlabProject);
+      const apiUrl  = `${gitlabUrl}/api/v4/projects/${encoded}`;
+      const headers: Record<string, string> = { 'User-Agent': 'OpenQA/3.0' };
+      if (gitlabToken) headers['PRIVATE-TOKEN'] = gitlabToken;
+
+      const t0 = Date.now();
+      let glRes: Awaited<ReturnType<typeof fetch>>;
+      try {
+        glRes = await fetch(apiUrl, { headers, signal: AbortSignal.timeout(8000) });
+      } catch (_err: unknown) {
+        return res.json({ success: false, message: 'Network error — GitLab unreachable', latency: Date.now() - t0 });
+      }
+      const latency = Date.now() - t0;
+
+      if (glRes.ok) {
+        const data = await glRes.json().catch(() => ({})) as Record<string, unknown>;
+        const visibility = (data.visibility as string) || 'unknown';
+        return res.json({
+          success: true,
+          message: `${gitlabProject} found (${visibility})`,
+          latency,
+          authenticated: !!gitlabToken,
+        });
+      }
+      if (glRes.status === 401) return res.json({ success: false, message: 'Invalid or expired GitLab token', latency });
+      if (glRes.status === 403) return res.json({ success: false, message: 'Access forbidden — check token permissions', latency });
+      if (glRes.status === 404) {
+        return res.json({
+          success: false,
+          message: gitlabToken
+            ? `Project ${gitlabProject} not found or token has no access`
+            : `Project ${gitlabProject} not found (or private — add a token)`,
+          latency,
+        });
+      }
+      return res.json({ success: false, message: `GitLab API returned ${glRes.status}`, latency });
+    } catch (err: any) {
+      return res.json({ success: false, message: `Error: ${err.message}` });
+    }
+  });
+
   // Test LLM provider — verify the API key is valid with a minimal call
   router.post('/api/test-llm', async (req, res) => {
     const { provider, apiKey, baseUrl } =

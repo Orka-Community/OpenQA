@@ -106,8 +106,12 @@ export function getConfigHTML(cfg: any): string {
               🌐 Target URL
             </button>
             <button id="tab-github" onclick="switchTargetMode('github')"
+              style="flex:1;padding:9px 0;font-size:12px;font-weight:700;border:none;cursor:pointer;transition:background 0.15s,color 0.15s;border-right:1px solid var(--border);background:transparent;color:var(--text-2);">
+              🐙 GitHub
+            </button>
+            <button id="tab-gitlab" onclick="switchTargetMode('gitlab')"
               style="flex:1;padding:9px 0;font-size:12px;font-weight:700;border:none;cursor:pointer;transition:background 0.15s,color 0.15s;background:transparent;color:var(--text-2);">
-              🐙 GitHub Repository
+              🦊 GitLab
             </button>
           </div>
         </div>
@@ -164,11 +168,37 @@ export function getConfigHTML(cfg: any): string {
               <div class="form-field full">
                 <label>Personal Access Token</label>
                 <input type="password" id="github_token" name="github.token" value="${cfg.github?.token || ''}" placeholder="ghp_xxxxxxxxxxxx">
+                <p style="font-size:12px;color:var(--text-2);margin-top:6px;">
+                  Scope requis : <code>repo</code> (read + create issues). Repos publics fonctionnent sans token (60 req/hr).
+                </p>
               </div>
               <p style="font-size:12px;color:var(--text-2);margin-top:8px;">
-                OpenQA will test the repository at
+                OpenQA testera le dépôt
                 <code style="color:var(--accent)" id="github-url-preview">https://github.com/…</code>.
-                A token is required to create issues and access private repos.
+              </p>
+            </div>
+
+            <!-- ── GitLab mode ────────────────────────────────────────── -->
+            <div id="section-gitlab" style="display:none;">
+              <div class="form-section-title">GitLab Repository</div>
+              <div class="form-field full">
+                <label>Instance URL <span style="font-weight:400;color:var(--text-2)">(laisser vide pour gitlab.com)</span></label>
+                <input type="url" id="gitlab_url" name="gitlab.url" placeholder="https://gitlab.com">
+              </div>
+              <div class="form-field full">
+                <label>Project path</label>
+                <input type="text" id="gitlab_project" name="gitlab.project" placeholder="myorg/myrepo">
+              </div>
+              <div class="form-field full">
+                <label>Personal Access Token</label>
+                <input type="password" id="gitlab_token" name="gitlab.token" placeholder="glpat-xxxxxxxxxxxx">
+                <p style="font-size:12px;color:var(--text-2);margin-top:6px;">
+                  Scope requis : <code>read_api</code> (lecture des fichiers). Ajouter <code>api</code> pour créer des issues.
+                </p>
+              </div>
+              <p style="font-size:12px;color:var(--text-2);margin-top:8px;">
+                OpenQA testera le dépôt
+                <code style="color:var(--accent)" id="gitlab-url-preview">https://gitlab.com/…</code>.
               </p>
             </div>
           </form>
@@ -232,34 +262,29 @@ export function getConfigHTML(cfg: any): string {
 </div>
 
 <script>
-  // ── Target mode (url | github) ────────────────────────────────────────────────
+  // ── Target mode (url | github | gitlab) ──────────────────────────────────────
   let _targetMode = localStorage.getItem('openqa_target_mode') || 'url';
 
   function switchTargetMode(mode) {
     _targetMode = mode;
     localStorage.setItem('openqa_target_mode', mode);
 
-    const sectionUrl    = document.getElementById('section-url');
-    const sectionGithub = document.getElementById('section-github');
-    const tabUrl        = document.getElementById('tab-url');
-    const tabGithub     = document.getElementById('tab-github');
+    const sections = { url: 'section-url', github: 'section-github', gitlab: 'section-gitlab' };
+    const tabs     = { url: 'tab-url',     github: 'tab-github',     gitlab: 'tab-gitlab'     };
 
-    if (mode === 'url') {
-      sectionUrl.style.display    = '';
-      sectionGithub.style.display = 'none';
-      tabUrl.style.background    = 'var(--accent)';
-      tabUrl.style.color         = '#fff';
-      tabGithub.style.background = 'transparent';
-      tabGithub.style.color      = 'var(--text-2)';
-    } else {
-      sectionUrl.style.display    = 'none';
-      sectionGithub.style.display = '';
-      tabUrl.style.background    = 'transparent';
-      tabUrl.style.color         = 'var(--text-2)';
-      tabGithub.style.background = 'var(--accent)';
-      tabGithub.style.color      = '#fff';
+    for (const [m, id] of Object.entries(sections)) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = (m === mode) ? '' : 'none';
+    }
+    for (const [m, id] of Object.entries(tabs)) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.style.background = (m === mode) ? 'var(--accent)' : 'transparent';
+        el.style.color      = (m === mode) ? '#fff'          : 'var(--text-2)';
+      }
     }
     updateGithubPreview();
+    updateGitlabPreview();
   }
 
   function updateGithubPreview() {
@@ -273,10 +298,21 @@ export function getConfigHTML(cfg: any): string {
     }
   }
 
-  // Wire live preview to owner/repo inputs after DOM is ready
+  function updateGitlabPreview() {
+    const base    = ((document.getElementById('gitlab_url')?.value     || '').trim() || 'https://gitlab.com');
+    const project = (document.getElementById('gitlab_project')?.value  || '').trim();
+    const preview = document.getElementById('gitlab-url-preview');
+    if (preview) {
+      preview.textContent = project ? base + '/' + project : base + '/…';
+    }
+  }
+
+  // Wire live previews to inputs after DOM is ready
   window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('github_owner')?.addEventListener('input', updateGithubPreview);
     document.getElementById('github_repo')?.addEventListener('input',  updateGithubPreview);
+    document.getElementById('gitlab_url')?.addEventListener('input',     updateGitlabPreview);
+    document.getElementById('gitlab_project')?.addEventListener('input', updateGitlabPreview);
   });
 
   // ── Save ──────────────────────────────────────────────────────────────────────
@@ -306,16 +342,26 @@ export function getConfigHTML(cfg: any): string {
       }
     }
 
-    // When in GitHub mode, explicitly clear saas.url so the daemon uses GitHub
+    // In GitHub mode: clear saas.url + gitlab
     if (_targetMode === 'github') {
       if (!config.saas) config.saas = {};
       config.saas.url = '';
+      config.gitlab = { token: '', project: '', url: '' };
     }
-    // When in URL mode, clear github fields so the daemon doesn't fall back to GitHub
+    // In GitLab mode: clear saas.url + github
+    if (_targetMode === 'gitlab') {
+      if (!config.saas) config.saas = {};
+      config.saas.url = '';
+      if (!config.github) config.github = {};
+      config.github.owner = '';
+      config.github.repo  = '';
+    }
+    // In URL mode: clear github + gitlab
     if (_targetMode === 'url') {
       if (!config.github) config.github = {};
       config.github.owner = '';
       config.github.repo  = '';
+      config.gitlab = { token: '', project: '', url: '' };
     }
 
     try {
@@ -342,6 +388,10 @@ export function getConfigHTML(cfg: any): string {
       if (_targetMode === 'github') {
         showMessage('Testing GitHub repo…', 'success');
         const res = await fetch('/api/test-github', { method: 'POST', credentials: 'include' });
+        r = await res.json();
+      } else if (_targetMode === 'gitlab') {
+        showMessage('Testing GitLab repo…', 'success');
+        const res = await fetch('/api/test-gitlab', { method: 'POST', credentials: 'include' });
         r = await res.json();
       } else {
         const url      = document.getElementById('saas_url').value.trim();
@@ -466,16 +516,22 @@ export function getConfigHTML(cfg: any): string {
       setVal('github_repo',  cfg.github?.repo);
       if (cfg.github?.token) setVal('github_token', cfg.github.token);
 
+      // GitLab (stored via config.set as flat keys)
+      if (cfg.gitlab?.token)   setVal('gitlab_token',   cfg.gitlab.token);
+      if (cfg.gitlab?.project) setVal('gitlab_project', cfg.gitlab.project);
+      if (cfg.gitlab?.url)     setVal('gitlab_url',     cfg.gitlab.url);
+
       // Agent
       setVal('agent_autoStart', cfg.agent?.autoStart);
       if (cfg.agent?.intervalMs)    setVal('agent_intervalMs', cfg.agent.intervalMs);
       if (cfg.agent?.maxIterations) setVal('agent_maxIterations', cfg.agent.maxIterations);
 
-      // Detect mode: activate GitHub tab if owner is set and no saas.url
+      // Detect mode — prefer saved choice, fallback to data-driven detection
       const hasGithub = !!(cfg.github?.owner || cfg.github?.repo);
+      const hasGitlab = !!(cfg.gitlab?.project);
       const hasUrl    = !!(cfg.saas?.url);
       const savedMode = localStorage.getItem('openqa_target_mode');
-      const mode = savedMode || (hasGithub && !hasUrl ? 'github' : 'url');
+      const mode = savedMode || (hasGithub && !hasUrl ? 'github' : hasGitlab && !hasUrl ? 'gitlab' : 'url');
       switchTargetMode(mode);
     } catch (e) {
       console.error('Failed to reload config from API:', e);

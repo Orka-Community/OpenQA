@@ -31,6 +31,9 @@ export interface SaaSConfig {
     testCredentials?: { username: string; password: string };
   };
   directives?: string[];
+  // GitLab access (used in GitLab mode to fetch manifest files and create issues)
+  gitlabToken?: string;
+  gitlabUrl?: string;
 }
 
 export interface GeneratedTest {
@@ -597,23 +600,30 @@ Respond with JSON:
     const log = logger.child({ app: this.saasConfig.name });
     log.info('Brain starting autonomous mode', { maxIterations });
 
-    // Detect mode up front — used in Phase 0 and Phase 2
+    // Detect provider mode up front — used in Phase 0 and Phase 2
     const isGithubMode = this.saasConfig.url.startsWith('https://github.com/') ||
                          this.saasConfig.url.startsWith('http://github.com/');
+    const isGitlabMode = !isGithubMode && (
+      this.saasConfig.url.startsWith('https://gitlab.com/') ||
+      this.saasConfig.url.startsWith('http://gitlab.com/') ||
+      // self-hosted GitLab: url contains /gitlab/ or was configured with gitlab.url
+      this.saasConfig.url.includes('/gitlab/')
+    );
+
+    const MANIFEST_FILES = [
+      'package.json', 'requirements.txt', 'pyproject.toml', 'Pipfile',
+      'go.mod', 'Cargo.toml', 'pom.xml', 'build.gradle', 'build.gradle.kts',
+      'Gemfile', 'composer.json', 'mix.exs', 'setup.py',
+      'openapi.json', 'openapi.yaml', 'swagger.json', 'swagger.yaml',
+    ];
 
     // ── Phase 0: Project Intelligence (runs BEFORE any testing) ─────────────
     log.info('Running project intelligence analysis…');
     try {
-      // In GitHub mode: pre-fetch key manifest files to detect language/framework
-      // without burning a full LLM call. This is free — reads via GitHub API.
       let fileContents: Record<string, string> = {};
+
+      // GitHub mode: pre-fetch manifest files via GitHub API (free, no LLM)
       if (isGithubMode && this.githubTools) {
-        const MANIFEST_FILES = [
-          'package.json', 'requirements.txt', 'pyproject.toml', 'Pipfile',
-          'go.mod', 'Cargo.toml', 'pom.xml', 'build.gradle', 'build.gradle.kts',
-          'Gemfile', 'composer.json', 'mix.exs', 'setup.py',
-          'openapi.json', 'openapi.yaml', 'swagger.json', 'swagger.yaml',
-        ];
         const tools = this.githubTools.getTools();
         const getFileTool = tools.find(t => t.name === 'get_file_content');
         if (getFileTool) {
@@ -628,6 +638,33 @@ Respond with JSON:
           await Promise.all(fetches);
           log.info('GitHub manifest files fetched', { count: Object.keys(fileContents).length, files: Object.keys(fileContents) });
         }
+      }
+
+      // GitLab mode: pre-fetch manifest files via GitLab REST API (free, no LLM)
+      if (isGitlabMode) {
+        // Extract project path from URL: https://gitlab.com/owner/repo → owner/repo
+        const urlObj = new URL(this.saasConfig.url);
+        const projectPath = urlObj.pathname.replace(/^\//, '').replace(/\.git$/, '');
+        // Use explicit gitlabUrl if set (self-hosted), fallback to URL origin
+        const gitlabBase  = this.saasConfig.gitlabUrl || urlObj.origin;
+        const encoded     = encodeURIComponent(projectPath);
+        const gitlabToken = this.saasConfig.gitlabToken;
+        const headers: Record<string, string> = { 'User-Agent': 'OpenQA/3.0' };
+        if (gitlabToken) headers['PRIVATE-TOKEN'] = gitlabToken;
+
+        const fetches = MANIFEST_FILES.map(async (filePath) => {
+          try {
+            const encodedFile = encodeURIComponent(filePath);
+            const apiUrl = `${gitlabBase}/api/v4/projects/${encoded}/repository/files/${encodedFile}/raw?ref=HEAD`;
+            const res = await fetch(apiUrl, { headers, signal: AbortSignal.timeout(5000) });
+            if (res.ok) {
+              const text = await res.text();
+              if (text) fileContents[filePath] = text;
+            }
+          } catch { /* file doesn't exist or unreachable — skip */ }
+        });
+        await Promise.all(fetches);
+        log.info('GitLab manifest files fetched', { count: Object.keys(fileContents).length, files: Object.keys(fileContents) });
       }
 
       this.projectIntelligence = await this.intelligenceAnalyzer.analyze(
