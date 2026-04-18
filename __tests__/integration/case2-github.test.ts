@@ -121,15 +121,13 @@ describe('Case 2 — GitHub: Orka-Community/paper2any', () => {
       expect(cfg.github?.token).toBe('ghp_test_token_12345');
     });
 
-    it('produces empty github config when GITHUB_REPO is absent', () => {
+    it('github is undefined when GITHUB_REPO is absent', () => {
       delete process.env.GITHUB_REPO;
       delete process.env.GITHUB_OWNER;
       delete process.env.GITHUB_TOKEN;
       const mgr = new ConfigManager();
       const cfg = mgr.getConfigSync();
-      expect(cfg.github?.owner).toBe('');
-      expect(cfg.github?.repo).toBe('');
-      expect(cfg.github?.token).toBe('');
+      expect(cfg.github).toBeUndefined();
     });
 
     it('getAll() includes normalised github fields', async () => {
@@ -334,7 +332,7 @@ describe('Case 2 — GitHub: Orka-Community/paper2any', () => {
         labels: ['security', 'frontend'],
       });
 
-      expect((result as { output: string }).output).toContain('GitHub issue created successfully');
+      expect((result as { output: string }).output).toContain('GitHub issue created');
       expect((result as { output: string }).output).toContain('#1');
 
       const bugs = await db.getAllBugs();

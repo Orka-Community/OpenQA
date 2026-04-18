@@ -75,14 +75,14 @@ describe('Case 1 — Target URL: www.wiloomail.com', () => {
       expect(mgr.getConfigSync().saas?.url).toBe(TARGET_URL);
     });
 
-    it('github fields are empty when only SAAS_URL is configured', () => {
+    it('github is undefined when only SAAS_URL is configured', () => {
       process.env.SAAS_URL = TARGET_URL;
       delete process.env.GITHUB_REPO;
       delete process.env.GITHUB_OWNER;
+      delete process.env.GITHUB_TOKEN;
       const mgr = new ConfigManager();
       const cfg = mgr.getConfigSync();
-      expect(cfg.github?.owner).toBe('');
-      expect(cfg.github?.repo).toBe('');
+      expect(cfg.github).toBeUndefined();
     });
 
     it('getAll() includes saas.url from env', async () => {

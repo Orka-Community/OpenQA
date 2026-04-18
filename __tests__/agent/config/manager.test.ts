@@ -101,13 +101,13 @@ describe('ConfigManager', () => {
       expect(cfg.github?.repo).toBe('paper2any');
     });
 
-    it('produces empty owner/repo when GITHUB_REPO is not set', () => {
+    it('github is undefined when GITHUB_REPO is not set', () => {
       delete process.env.GITHUB_REPO;
       delete process.env.GITHUB_OWNER;
+      delete process.env.GITHUB_TOKEN;
       const mgr = new ConfigManager();
       const cfg = mgr.getConfigSync();
-      expect(cfg.github?.owner).toBe('');
-      expect(cfg.github?.repo).toBe('');
+      expect(cfg.github).toBeUndefined();
     });
 
     it('includes GITHUB_TOKEN in config', () => {

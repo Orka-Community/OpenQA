@@ -14,6 +14,11 @@ const mockPage = {
   waitForTimeout: vi.fn().mockResolvedValue(undefined),
   url: vi.fn().mockReturnValue('https://example.com'),
   on: vi.fn(),
+  evaluate: vi.fn().mockImplementation((fn: Function) => {
+    // Return sensible defaults for all evaluate calls
+    return Promise.resolve([]);
+  }),
+  waitForSelector: vi.fn().mockResolvedValue({}),
 };
 
 const mockContext = {
@@ -50,17 +55,19 @@ describe('BrowserTools', () => {
     }
   });
 
-  it('should return 6 tools', async () => {
+  it('should return 8 tools', async () => {
     const { BrowserTools } = await import('../../../agent/tools/browser.js');
     const tools = new BrowserTools(db, 'test_session');
     const toolDefs = tools.getTools();
-    expect(toolDefs).toHaveLength(6);
+    expect(toolDefs).toHaveLength(8);
     expect(toolDefs.map(t => t.name)).toEqual([
       'navigate_to_page',
       'click_element',
       'fill_input',
       'take_screenshot',
       'get_page_content',
+      'find_element_by_text',
+      'wait_for_element',
       'check_console_errors',
     ]);
   });
@@ -113,8 +120,15 @@ describe('BrowserTools', () => {
 
     const contentTool = toolDefs.find(t => t.name === 'get_page_content')!;
     const result = await contentTool.execute({} as never);
+    const output = (result as { output: string }).output;
 
-    expect((result as { output: string }).output).toBe('Hello World');
+    // get_page_content returns structured JSON with title, url, textSample, links, forms, buttons, inputs
+    const parsed = JSON.parse(output);
+    expect(parsed).toHaveProperty('title', 'Test Page');
+    expect(parsed).toHaveProperty('url', 'https://example.com');
+    expect(parsed).toHaveProperty('textSample');
+    expect(parsed).toHaveProperty('links');
+    expect(parsed).toHaveProperty('forms');
   });
 
   it('should close browser', async () => {

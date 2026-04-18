@@ -31,9 +31,14 @@ export class ConfigManager {
         password: process.env.SAAS_PASSWORD
       },
       github: (() => {
+        // Only build GitHub config when at least GITHUB_REPO is set.
+        // Otherwise leave it undefined so the optional schema field skips validation.
+        const rawEnvRepo = process.env.GITHUB_REPO || '';
+        if (!rawEnvRepo && !process.env.GITHUB_OWNER && !process.env.GITHUB_TOKEN) return undefined;
+
         // Normalize GITHUB_REPO: accept full URL (https://github.com/owner/repo[.git])
         // or short form (owner/repo) — extract just the repo name and owner if not set
-        let rawRepo = process.env.GITHUB_REPO || '';
+        let rawRepo = rawEnvRepo;
         let derivedOwner = process.env.GITHUB_OWNER || '';
         if (rawRepo.includes('github.com/')) {
           const match = rawRepo.match(/github\.com\/([^/]+)\/([^/.]+)/);

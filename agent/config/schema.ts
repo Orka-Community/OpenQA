@@ -15,7 +15,8 @@ export const saasConfigSchema = z.object({
 });
 
 export const githubConfigSchema = z.object({
-  token: z.string().min(1, 'GITHUB_TOKEN is required when GitHub is configured'),
+  // Token is optional — public repos work at 60 req/hr without one
+  token: z.string().default(''),
   owner: z.string().default(''),
   repo: z.string().default(''),
 });

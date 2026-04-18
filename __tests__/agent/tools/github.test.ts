@@ -65,19 +65,19 @@ describe('GitHubTools', () => {
     const createIssueTool = toolDefs[0];
 
     const result = await createIssueTool.execute({
-      title: 'Critical Bug',
-      body: 'Steps to reproduce...',
+      title: 'Critical XSS vulnerability in login form',
+      body: 'Steps to reproduce: enter <script>alert(1)</script> in the username field and submit. The payload executes in the context of the admin session, allowing full account takeover.',
       severity: 'critical',
-      labels: ['frontend'],
+      labels: ['security', 'frontend'],
     });
 
-    expect(result.output).toContain('GitHub issue created successfully');
+    expect(result.output).toContain('GitHub issue created');
     expect(result.output).toContain('#42');
 
     // Verify bug was stored in DB
     const bugs = await db.getAllBugs();
     expect(bugs).toHaveLength(1);
-    expect(bugs[0].title).toBe('Critical Bug');
+    expect(bugs[0].title).toBe('Critical XSS vulnerability in login form');
     expect(bugs[0].severity).toBe('critical');
     expect(bugs[0].github_issue_url).toBe('https://github.com/test/repo/issues/42');
   });

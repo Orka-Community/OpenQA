@@ -83,7 +83,7 @@ describe('openQAConfigSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('should reject github config with empty token', () => {
+  it('should accept github config with empty token (public repos work without auth)', () => {
     const result = validateConfigSafe({
       llm: {},
       saas: {},
@@ -92,7 +92,7 @@ describe('openQAConfigSchema', () => {
       database: {},
       github: { token: '', owner: 'orka', repo: 'openqa' },
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it('validateConfig should throw on invalid config', () => {

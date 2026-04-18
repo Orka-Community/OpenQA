@@ -40,19 +40,19 @@ describe('KanbanTools', () => {
     const createTool = toolDefs.find(t => t.name === 'create_kanban_ticket')!;
 
     const result = await createTool.execute({
-      title: 'Test Bug',
-      description: 'Found a bug',
+      title: 'XSS vulnerability in search input',
+      description: 'Steps to reproduce: enter <script>alert(1)</script> in the search field and submit. The script executes in the context of the current user session, allowing cookie theft.',
       priority: 'high',
       column: 'to-do',
-      tags: ['ui'],
+      tags: ['security', 'xss'],
     } as never);
 
-    expect((result as { output: string }).output).toContain('Kanban ticket created successfully');
+    expect((result as { output: string }).output).toContain('Kanban ticket created');
     expect((result as { output: string }).output).toContain('Column: to-do');
 
     const tickets = await db.getKanbanTickets();
     expect(tickets).toHaveLength(1);
-    expect(tickets[0].title).toBe('Test Bug');
+    expect(tickets[0].title).toBe('XSS vulnerability in search input');
   });
 
   it('should update a ticket via tool', async () => {
