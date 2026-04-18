@@ -1,5 +1,11 @@
 # @openqa/cli
 
+## 3.1.1
+
+### Patch Changes
+
+- chore: update package
+
 ## 3.1.0
 
 ### Minor Changes
