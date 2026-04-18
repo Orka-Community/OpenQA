@@ -619,6 +619,10 @@ Respond with JSON:
     const log = logger.child({ app: this.saasConfig.name });
     log.info('Brain starting autonomous mode', { maxIterations });
 
+    // Clear stale specialist statuses from any previous session so the dashboard
+    // Specialists panel always reflects the CURRENT run only.
+    this.specialistManager?.reset();
+
     // Detect provider mode up front — used in Phase 0 and Phase 2
     const isGithubMode = this.saasConfig.url.startsWith('https://github.com/') ||
                          this.saasConfig.url.startsWith('http://github.com/');

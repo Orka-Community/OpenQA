@@ -1030,10 +1030,14 @@ export class ProjectIntelligenceAnalyzer {
     }
 
     // ── Step 3: build everything from the (possibly enriched) signals ──────────
-    const mandatoryChecks = [
-      ...(DOMAIN_MANDATORY_CHECKS[domain] || []),
-      ...DOMAIN_MANDATORY_CHECKS.default,
-    ];
+    // When domain remains 'unknown' we have too few signals to give meaningful advice —
+    // do NOT inject generic default checks that would look like fabricated tickets.
+    const mandatoryChecks = domain === 'unknown'
+      ? []
+      : [
+          ...(DOMAIN_MANDATORY_CHECKS[domain] || []),
+          ...DOMAIN_MANDATORY_CHECKS.default,
+        ];
 
     const suggestedSpecialists = selectSpecialists(domain, riskLevel, signals, backendProfile);
     const dynamicAgentBlueprints = buildDynamicAgentBlueprints(domain, signals, url);

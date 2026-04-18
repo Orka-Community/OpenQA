@@ -98,6 +98,10 @@ export class ProactiveKanbanManager {
    * Returns the list of tickets that were actually created (skips duplicates).
    */
   async seedFromIntelligence(intel: ProjectIntelligence): Promise<KanbanTicket[]> {
+    // If the intelligence layer couldn't identify the domain, skip seeding entirely.
+    // Generic default tickets would look like fabricated noise to the user.
+    if (intel.domain === 'unknown') return [];
+
     await this.loadExistingTitles();
     const created: KanbanTicket[] = [];
 

@@ -66,22 +66,24 @@ export function getTestsHTML(): string {
       background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
     }
     .table-header {
-      display: grid; grid-template-columns: 160px 1fr 100px 120px;
+      display: grid; grid-template-columns: minmax(120px, 200px) 1fr minmax(80px, 100px) minmax(100px, 130px);
       padding: 12px 16px; background: var(--panel);
       font-size: 11px; font-weight: 700; color: var(--text-3);
       text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border);
     }
     .table-row {
-      display: grid; grid-template-columns: 160px 1fr 100px 120px;
+      display: grid; grid-template-columns: minmax(120px, 200px) 1fr minmax(80px, 100px) minmax(100px, 130px);
       padding: 13px 16px; border-bottom: 1px solid var(--border);
-      font-size: 13px; align-items: start; transition: background 0.15s;
+      font-size: 13px; align-items: start; transition: background 0.15s; min-width: 0;
     }
+    .table-row > * { min-width: 0; overflow: hidden; }
     .table-row:hover { background: var(--panel); }
     .table-row:last-child { border-bottom: none; }
 
     .action-type {
       font-family: var(--mono); font-size: 11px; font-weight: 600;
-      padding: 3px 8px; border-radius: 5px; display: inline-block; white-space: nowrap;
+      padding: 3px 8px; border-radius: 5px; display: inline-block;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
     }
     .type-navigate    { background: #1e3a5f; color: #60a5fa; }
     .type-click       { background: #1c3a2e; color: #4ade80; }
@@ -93,11 +95,14 @@ export function getTestsHTML(): string {
     .type-error       { background: #3f1e1e; color: #f87171; }
     .type-default     { background: var(--panel); color: var(--text-2); }
 
-    .action-desc { font-size: 13px; color: var(--text-1); line-height: 1.4; }
+    .action-desc {
+      font-size: 13px; color: var(--text-1); line-height: 1.4;
+      overflow: hidden; text-overflow: ellipsis;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    }
     .action-output {
       margin-top: 4px; font-size: 11px; font-family: var(--mono);
-      color: var(--text-3); max-width: 640px;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
 
     .status-badge {

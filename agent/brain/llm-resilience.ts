@@ -46,12 +46,27 @@ export class ResilientLLM extends EventEmitter {
     });
   }
 
+  /**
+   * Resolve short-hand model aliases to their full Anthropic API model IDs.
+   * Users often type "claude-sonnet" in the config panel — this avoids a 404.
+   */
+  private resolveAnthropicModel(model: string): string {
+    const aliases: Record<string, string> = {
+      'claude-sonnet':   'claude-sonnet-4-6',
+      'claude-opus':     'claude-opus-4-6',
+      'claude-haiku':    'claude-haiku-4-5-20251001',
+      'claude-3-sonnet': 'claude-3-5-sonnet-20241022',
+      'claude-3-opus':   'claude-opus-4-6',
+      'claude-3-haiku':  'claude-haiku-4-5-20251001',
+      'claude-3.5':      'claude-3-5-sonnet-20241022',
+    };
+    return aliases[model.toLowerCase()] ?? model;
+  }
+
   private createAdapter(provider: string, apiKey: string, model?: string): LLMAdapter {
     if (provider === 'anthropic') {
-      return new AnthropicAdapter({
-        apiKey,
-        model: model || 'claude-3-5-sonnet-20241022',
-      });
+      const resolved = this.resolveAnthropicModel(model || 'claude-3-5-sonnet-20241022');
+      return new AnthropicAdapter({ apiKey, model: resolved });
     }
     return new OpenAIAdapter({
       apiKey,

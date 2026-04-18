@@ -12,6 +12,20 @@ import { ApiHttpTools } from '../tools/api-http.js';
 /** Either GitHub or GitLab tools — both expose the same tool names. */
 export type RepoTools = GitHubTools | GitLabTools;
 
+/** Resolve short-hand Anthropic model aliases to full API model IDs. */
+function resolveAnthropicModel(model: string): string {
+  const aliases: Record<string, string> = {
+    'claude-sonnet':   'claude-sonnet-4-6',
+    'claude-opus':     'claude-opus-4-6',
+    'claude-haiku':    'claude-haiku-4-5-20251001',
+    'claude-3-sonnet': 'claude-3-5-sonnet-20241022',
+    'claude-3-opus':   'claude-opus-4-6',
+    'claude-3-haiku':  'claude-haiku-4-5-20251001',
+    'claude-3.5':      'claude-3-5-sonnet-20241022',
+  };
+  return aliases[model.toLowerCase()] ?? model;
+}
+
 export type AgentType =
   // ── SaaS / web-app specialists (use browser tools) ──────────────────────────
   | 'form-tester'
@@ -693,7 +707,8 @@ export class SpecialistAgentManager extends EventEmitter {
       ?? (mainIsLarge ? cheapFallback : mainModel);
 
     if (this.llmConfig.provider === 'anthropic') {
-      return new AnthropicAdapter({ apiKey: this.llmConfig.apiKey, model: specialistModel });
+      const resolved = resolveAnthropicModel(specialistModel || cheapFallback);
+      return new AnthropicAdapter({ apiKey: this.llmConfig.apiKey, model: resolved });
     }
     return new OpenAIAdapter({ apiKey: this.llmConfig.apiKey, model: specialistModel });
   }
@@ -902,6 +917,16 @@ Stay within 10 tool calls to avoid rate limits.`;
 
   getAllStatuses(): AgentStatus[] {
     return Array.from(this.agentStatuses.values());
+  }
+
+  /**
+   * Clear all in-memory agent state so a new session starts with a clean slate.
+   * Must be called at the beginning of each runAutonomously() to avoid stale
+   * FAILED/RUNNING entries from previous sessions accumulating in the panel.
+   */
+  reset(): void {
+    this.agents.clear();
+    this.agentStatuses.clear();
   }
 
   stopAgent(agentId: string): void {

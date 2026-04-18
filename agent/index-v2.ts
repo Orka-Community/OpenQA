@@ -237,6 +237,14 @@ export class OpenQAAgentV2 extends EventEmitter {
       throw err; // re-throw so .catch(console.error) in daemon logs it
     } finally {
       this.isRunning = false;
+      // Mark session as completed in DB so the dashboard Agents panel
+      // immediately shows Main Agent as "idle" instead of "running".
+      try {
+        await this.db.updateSession(this.sessionId, {
+          status: 'completed',
+          ended_at: new Date().toISOString(),
+        });
+      } catch { /* non-fatal — best effort */ }
     }
   }
 
