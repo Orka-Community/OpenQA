@@ -1,5 +1,11 @@
 # @openqa/cli
 
+## 2.1.27
+
+### Patch Changes
+
+- chore: update package
+
 ## 3.0.0
 
 ### Major Changes
@@ -9,6 +15,7 @@
 OpenQA can now test **backend API projects** in addition to web frontends. When a GitHub or GitLab URL is configured, OpenQA automatically detects the project type, language, and framework by reading manifest files — without any LLM call.
 
 **Supported stacks (auto-detected):**
+
 - **Node.js / TypeScript** — Express, Fastify, NestJS, Koa, Hapi, Next.js
 - **Python** — FastAPI, Django, Flask, Aiohttp, Starlette, Sanic
 - **Go** — Gin, Echo, Fiber, Chi, gorilla/mux, net/http
@@ -20,12 +27,14 @@ OpenQA can now test **backend API projects** in addition to web frontends. When 
 - **C# / .NET** — ASP.NET Core
 
 **4 new backend specialists:**
+
 - `backend-api-tester` — discovers and security-tests all live API endpoints (auth, injection, CORS, rate limiting)
 - `backend-code-auditor` — static code analysis across any language (secrets, SQL concatenation, missing error handling)
 - `backend-security-auditor` — OWASP API Security Top 10 (2023) full audit, both static and live
 - `backend-dependency-scanner` — CVE detection, missing lockfiles, wildcard versions, absence of `npm audit` / `pip-audit` in CI
 
 **New `BackendProfile` in `ProjectIntelligence`:**
+
 ```typescript
 {
   projectType: 'backend-only' | 'frontend-only' | 'fullstack' | 'library' | 'cli' | 'mobile' | 'unknown',
@@ -42,53 +51,62 @@ OpenQA can now test **backend API projects** in addition to web frontends. When 
 
 5 new tools for HTTP-level backend testing (no browser required):
 
-| Tool | Description |
-|------|-------------|
-| `test_http_endpoint` | HTTP request + security header analysis + secret exposure detection |
-| `discover_api_endpoints` | Probes 30+ common paths to map the live API surface |
-| `test_endpoint_auth` | 5 invalid token variants — flags endpoints accessible without auth |
+| Tool                      | Description                                                          |
+| ------------------------- | -------------------------------------------------------------------- |
+| `test_http_endpoint`      | HTTP request + security header analysis + secret exposure detection  |
+| `discover_api_endpoints`  | Probes 30+ common paths to map the live API surface                  |
+| `test_endpoint_auth`      | 5 invalid token variants — flags endpoints accessible without auth   |
 | `test_endpoint_injection` | 10 payloads: SQLi, NoSQLi, XSS, mass assignment, prototype pollution |
-| `test_rate_limiting` | 20 concurrent requests — detects missing 429 protection |
-| `check_cors_policy` | Wildcard origin, credentials bypass, null origin |
+| `test_rate_limiting`      | 20 concurrent requests — detects missing 429 protection              |
+| `check_cors_policy`       | Wildcard origin, credentials bypass, null origin                     |
 
 #### Enterprise Features
 
 **Deduplication pipeline:**
+
 - SHA-256 fingerprint per finding (`title + url + category`)
 - Duplicate findings silently skipped before any ticket is created
 
 **Confidence scoring:**
+
 - Every finding scored 0–100 based on evidence quality
 - `≥ 75` → auto-approved, ticket created immediately
 - `50–74` → queued for human review at `/approvals`
 - `< 50` → discarded (false positive)
 
 **Human approval workflow:**
+
 - `GET /api/approvals` — list pending findings
 - `POST /api/approvals/:id/approve` — approve → auto-creates Kanban ticket
 - `POST /api/approvals/:id/reject` — reject with optional note
 
 **Scheduled runs:**
+
 - Full CRUD: `GET/POST /api/schedules`, `PUT /api/schedules/:id`, `DELETE /api/schedules/:id`
 - Background cron job checks every 60 seconds, fires due sessions autonomously
 
 **Session timeout:**
+
 - Background job (every 5 min) marks sessions running > 2h as `failed`
 
 **Session baseline & regression detection:**
+
 - `GET /api/sessions/:id/baseline` — compares current session bugs vs previous session
 - Detects regressions (bugs that reappeared) and improvements (bugs that were fixed)
 
 **External integrations:**
+
 - **Jira** — REST API v3, Basic auth, severity→priority mapping, ADF description format
 - **Linear** — GraphQL API, priority 1–4, rich markdown description
 - **Azure DevOps** — REST API v7, JSON Patch document format
 
 **Executive report:**
+
 - `GET /api/reports/:sessionId/executive` — single-page print-ready HTML
 - QA score circle (green/amber/red), 3 key metrics, top 5 issues, recommendations
 
 **GitHub Actions webhook:**
+
 - `POST /api/webhook/github` — HMAC `X-Hub-Signature-256` validation
 - Triggers an autonomous run on `push` and `pull_request` events
 
@@ -103,6 +121,7 @@ OpenQA can now test **backend API projects** in addition to web frontends. When 
 #### Parallel Specialist Execution
 
 Specialists now run in a **concurrency pool** instead of sequentially:
+
 - SaaS mode: max 2 concurrent specialists
 - GitHub mode: 1 at a time (API rate limit–aware)
 - Rate limit errors trigger a 30-second pause and retry
